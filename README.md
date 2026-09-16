@@ -2,6 +2,10 @@
 
 Hong Kong Real-Time Traffic Monitor. Responsive Traditional Chinese map with all officially published red-light junctions, speed-enforcement housings and traffic snapshot locations. No application authentication, mock locations, static fallback datasets, or API keys.
 
+## Live site
+
+[Open the Hong Kong Real-Time Traffic Monitor](https://hk-real-time-traffic.stanley-it.workers.dev/)
+
 ## Run
 
 Node 22.13 or later. Install with `npm ci`, then `npm run dev`. On Windows, the development script uses Next.js directly to avoid Vinext worker read failures on OneDrive-backed workspaces; production builds still use Vinext. Build with `npm run build`. Preview the built Cloudflare Worker with `npm start`. Validate types with `npx tsc --noEmit`.
