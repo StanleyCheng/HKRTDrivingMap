@@ -1,11 +1,12 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import { Video, TrafficCone, Gauge, Layers, MapPin, ArrowUpRight, Info, RefreshCw, X, ShieldCheck, LoaderCircle, Clock3, Route } from 'lucide-react';
 import { Camera, CameraData, LayerKind, kinds, layers, hkTime, featureService, snapshotInventory } from '@/lib/traffic';
 import TrafficMap from './traffic-map';
 
 type LayerState = { data?: CameraData; loading: boolean; error?: string };
-type Snapshot = { image: string; updatedAt: string | null; fetchedAt: string };
+type Snapshot = { imageUrl: string; updatedAt: string | null; fetchedAt: string };
 const icons = { redlight: TrafficCone, speed: Gauge, snapshot: Video };
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.name === 'TypeError') return '網絡連線失敗，請檢查連線後重試。';
@@ -25,9 +26,22 @@ function SnapshotImage({ camera }: { camera: Camera }) {
       busy = true; setLoading(true); setError('');
       try {
         const r = await fetch(`/api/snapshot/${camera.sourceId}`, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(55000)]), cache: 'no-store' });
-        const data = await r.json() as Snapshot & { error?: string };
-        if (!r.ok) throw new Error(data.error || '快拍未能載入。');
-        if (!abort.signal.aborted) setShot(data);
+        if (!r.ok) {
+          const data = await r.json() as { error?: string };
+          throw new Error(data.error || '快拍未能載入。');
+        }
+        const blob = await r.blob();
+        const imageUrl = URL.createObjectURL(blob);
+        if (abort.signal.aborted) {
+          URL.revokeObjectURL(imageUrl);
+          return;
+        }
+        const modified = r.headers.get('Last-Modified');
+        setShot({
+          imageUrl,
+          updatedAt: modified && !Number.isNaN(Date.parse(modified)) ? new Date(modified).toISOString() : null,
+          fetchedAt: r.headers.get('X-Snapshot-Fetched-At') ?? new Date().toISOString(),
+        });
       } catch (e) { if (!abort.signal.aborted) setError(errorMessage(e, '快拍載入逾時，請重試。')); }
       finally { busy = false; if (!abort.signal.aborted) setLoading(false); }
     }
@@ -37,10 +51,17 @@ function SnapshotImage({ camera }: { camera: Camera }) {
     document.addEventListener('visibilitychange', visible);
     return () => { abort.abort(); clearInterval(interval); document.removeEventListener('visibilitychange', visible); };
   }, [camera.sourceId, tick]);
-  const stale = shot?.updatedAt && Date.now() - Date.parse(shot.updatedAt) > 10 * 60000;
+  useEffect(() => {
+    const imageUrl = shot?.imageUrl;
+    return () => { if (imageUrl) URL.revokeObjectURL(imageUrl); };
+  }, [shot?.imageUrl]);
+  const stale = Boolean(
+    shot?.updatedAt &&
+      Date.parse(shot.fetchedAt) - Date.parse(shot.updatedAt) > 10 * 60000,
+  );
   return <>
     <div className="snapshot-frame">
-      {shot && <img src={shot.image} alt={`${camera.name}的官方交通快拍`} onError={() => setError('影像無法顯示，請重試。')}/>}
+      {shot && <Image src={shot.imageUrl} alt={`${camera.name}的官方交通快拍`} fill sizes="(max-width: 640px) 100vw, 300px" unoptimized onError={() => setError('影像無法顯示，請重試。')}/>}
       {loading && !shot && <div className="image-status"><LoaderCircle size={18} className="spin"/>載入最新快拍</div>}
       {error && <div className="image-status" role="alert"><div>{error}<br/><button className="text-button" onClick={() => setTick(t => t + 1)}>重新載入快拍</button></div></div>}
     </div>
@@ -56,12 +77,12 @@ export default function TrafficMonitor() {
   const details = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const inflight = useRef(new Set<LayerKind>());
-  const fetchLayer = useCallback(async (kind: LayerKind, force = false) => {
+  const fetchLayer = useCallback(async (kind: LayerKind) => {
     if (inflight.current.has(kind)) return;
     inflight.current.add(kind);
     setStates(s => ({ ...s, [kind]: { ...s[kind], loading: true, error: undefined } }));
     try {
-      const response = await fetch(`/api/cameras/${kind}${force ? '?refresh=1' : ''}`, { signal: AbortSignal.timeout(90000), cache: 'no-store' });
+      const response = await fetch(`/api/cameras/${kind}`, { signal: AbortSignal.timeout(90000), cache: 'no-store' });
       const data = await response.json() as CameraData & { error?: string };
       if (!response.ok) throw new Error(data.error || '資料載入失敗。');
       setStates(s => ({ ...s, [kind]: { data, loading: false } }));
@@ -104,7 +125,7 @@ export default function TrafficMonitor() {
               <span className="layer-symbol"><Icon size={21}/></span><span className="layer-copy"><strong>{item.name}</strong><span>{item.caption}</span></span>
               <span className="layer-count">{state.loading && !state.data ? <LoaderCircle size={16} className="spin"/> : !enabled[kind] ? '—' : state.data ? state.data.count.toLocaleString() : '!'}</span><span className="switch"/>
             </button>
-            {state.error && <div className="layer-error" role="alert">{state.data && '更新失敗，現顯示上次成功載入的名冊。'}{state.error} <button className="text-button" onClick={() => fetchLayer(kind, true)}>重試</button></div>}
+            {state.error && <div className="layer-error" role="alert">{state.data && '更新失敗，現顯示上次成功載入的名冊。'}{state.error} <button className="text-button" onClick={() => fetchLayer(kind)}>重試</button></div>}
             {state.data?.count === 0 && <div className="layer-error">官方名冊暫無位置資料。</div>}
           </div>;
         })}</div>
@@ -120,7 +141,7 @@ export default function TrafficMonitor() {
             <a className="detail-source" href={layers[selected.kind].source} target="_blank" rel="noreferrer">運輸署 · 官方資料來源 <ArrowUpRight size={13}/></a>
           </> : <div className="empty-detail"><div className="empty-icon"><MapPin size={26}/></div><h4>每段路況，一目了然</h4><p>點選地圖上的相機標記<br/>查看位置詳情或最新交通快拍</p></div>}
         </div>
-      </div><footer className="sidebar-footer"><div className="connection" aria-live="polite"><span className={`connection-dot ${errors ? 'warning' : ''}`}/>{loading ? '正在讀取官方資料…' : errors ? '部分資料更新失敗' : latest ? `名冊讀取 ${hkTime(latest)}` : '未有可用資料'}</div><button className="icon-button" title="重新讀取所有官方名冊" aria-label="重新讀取所有官方名冊" disabled={loading} onClick={() => kinds.forEach(k => fetchLayer(k, true))}><RefreshCw size={14} className={loading ? 'spin' : ''}/></button></footer></aside>
+      </div><footer className="sidebar-footer"><div className="connection" aria-live="polite"><span className={`connection-dot ${errors ? 'warning' : ''}`}/>{loading ? '正在讀取官方資料…' : errors ? '部分資料更新失敗' : latest ? `名冊讀取 ${hkTime(latest)}` : '未有可用資料'}</div><button className="icon-button" title="重新讀取所有官方名冊" aria-label="重新讀取所有官方名冊" disabled={loading} onClick={() => kinds.forEach(k => fetchLayer(k))}><RefreshCw size={14} className={loading ? 'spin' : ''}/></button></footer></aside>
       <TrafficMap cameras={cameras} selected={selected} onSelect={choose} loading={loading} allDisabled={kinds.every(k => !enabled[k])} hasErrors={errors}/>
     </div>
     <dialog ref={dialog} className="sources-dialog" aria-labelledby="sources-title" onClick={e => { if (e.target === e.currentTarget) dialog.current?.close(); }}><div className="dialog-head"><h2 id="sources-title">資料來源與更新</h2><button className="close-button" aria-label="關閉資料來源" onClick={() => dialog.current?.close()}><X size={18}/></button></div><div className="dialog-body">

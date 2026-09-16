@@ -5,6 +5,7 @@ import { readExecutionProfile } from "./execution-profile.mjs";
 const [command, ...args] = process.argv.slice(2);
 if (!["dev", "build"].includes(command)) throw new Error("Expected dev or build.");
 const managedLinux = readExecutionProfile() === "managed-linux";
+const windowsDev = process.platform === "win32" && command === "dev";
 
 if (managedLinux && command === "build") {
   const result = spawnSync("bash", [
@@ -15,9 +16,11 @@ if (managedLinux && command === "build") {
 }
 
 // Import in this process so the preview owner retains its PID and signals.
-const cli = new URL(managedLinux
-  ? "../node_modules/vite/bin/vite.js"
-  : "../node_modules/vinext/dist/cli.js", import.meta.url);
+const cli = new URL(windowsDev
+  ? "../node_modules/next/dist/bin/next"
+  : managedLinux
+    ? "../node_modules/vite/bin/vite.js"
+    : "../node_modules/vinext/dist/cli.js", import.meta.url);
 process.argv = [process.execPath, fileURLToPath(cli), command,
   ...(!managedLinux && command === "dev" ? ["--port", "5173"] : []), ...args];
 await import(cli.href);

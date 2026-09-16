@@ -4,7 +4,7 @@ Hong Kong Real-Time Traffic Monitor. Responsive Traditional Chinese map with all
 
 ## Run
 
-Node 22.13 or later. Install with `npm ci`, then `npm run dev`. Build with `npm run build`. Preview the built Cloudflare Worker with `npm start`. Validate types with `npx tsc --noEmit`.
+Node 22.13 or later. Install with `npm ci`, then `npm run dev`. On Windows, the development script uses Next.js directly to avoid Vinext worker read failures on OneDrive-backed workspaces; production builds still use Vinext. Build with `npm run build`. Preview the built Cloudflare Worker with `npm start`. Validate types with `npx tsc --noEmit`.
 
 Stack: React, TypeScript, Vinext/Vite, Cloudflare Worker API routes, Leaflet 1.9, Leaflet.markercluster, fast-xml-parser. OpenStreetMap supplies the basemap (non-government); all camera information comes from government sources.
 
@@ -16,7 +16,7 @@ Stack: React, TypeScript, Vinext/Vite, Cloudflare Worker API routes, Leaflet 1.9
 
 The enforcement API first queries all object IDs and the independent official total, then fetches every ID in batches of 150, requesting WGS84 coordinates. Counts, identifiers, uniqueness and coordinates are verified before exposing a successful layer. It does not use a bounding box, nearest-camera limit, or just the first page. The complete XML supplies all snapshot locations. Invalid or incomplete sources produce an explicit error rather than silently dropping records.
 
-Local same-origin routes remove browser CORS limitations. Source requests have timeouts and one retry. Successful inventories are cached in memory for five minutes; a manual refresh bypasses that cache. Failed refreshes retain any previously displayed real data, explicitly labelled as an unsuccessful update. Sources fail independently. No fabricated fallback is used.
+Local same-origin routes remove browser CORS limitations. Source requests have timeouts and one retry. Successful inventories are cached in memory for five minutes; manual reloads respect that server-side cache to prevent an unauthenticated client from hammering official APIs. Failed refreshes retain any previously displayed real data, explicitly labelled as an unsuccessful update. Sources fail independently. No fabricated fallback is used.
 
 The selected snapshot is fetched immediately and every two minutes while the page is visible. `Last-Modified` is labelled as the official image file update time, distinct from capture time printed within the image and from the local retrieval time. Missing timestamps are explicitly shown. Images more than ten minutes old are flagged. An official HTTP-200 “No Service” JPEG is preserved with an explanatory note; availability cannot reliably be inferred from JPEG HTTP status alone.
 

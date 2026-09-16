@@ -4,13 +4,40 @@ import { Camera, CameraData, LayerKind, featureService, snapshotInventory } from
 const parser = new XMLParser({ ignoreAttributes: true, parseTagValue: false, processEntities: true });
 const cached = new Map<LayerKind, { expires: number; data: CameraData }>();
 const pending = new Map<LayerKind, Promise<CameraData>>();
-export async function officialFetch(url: string) {
+const redirectStatuses = new Set([301, 302, 303, 307, 308]);
+const maxOfficialRedirects = 3;
+type OfficialFetchOptions = { allowedRedirectHosts?: readonly string[] };
+
+function isAllowedHttpsUrl(url: URL, allowedHosts: Set<string>) {
+  return url.protocol === 'https:' && url.port === '' && !url.username && !url.password && allowedHosts.has(url.hostname);
+}
+
+export async function officialFetch(url: string, options: OfficialFetchOptions = {}) {
   let last: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(20000), redirect: 'follow', headers: { Accept: '*/*' } });
-      if (!res.ok) throw new Error(`官方資料服務回應 HTTP ${res.status}`);
-      return res;
+      const allowedHosts = options.allowedRedirectHosts && new Set(options.allowedRedirectHosts.map(host => host.toLowerCase()));
+      const signal = AbortSignal.timeout(20000);
+      let currentUrl = new URL(url);
+      let redirects = 0;
+      if (allowedHosts && !isAllowedHttpsUrl(currentUrl, allowedHosts)) throw new Error('官方資料網址不在允許清單內。');
+
+      while (true) {
+        const response = await fetch(currentUrl, { signal, redirect: allowedHosts ? 'manual' : 'follow', headers: { Accept: '*/*' } });
+        if (allowedHosts && redirectStatuses.has(response.status)) {
+          await response.body?.cancel();
+          if (redirects >= maxOfficialRedirects) throw new Error('官方資料服務重新導向次數過多。');
+          const location = response.headers.get('Location');
+          if (!location) throw new Error('官方資料服務重新導向未提供位置。');
+          const nextUrl = new URL(location, currentUrl);
+          if (!isAllowedHttpsUrl(nextUrl, allowedHosts)) throw new Error('官方資料服務重新導向至未受信任的網址。');
+          currentUrl = nextUrl;
+          redirects++;
+          continue;
+        }
+        if (!response.ok) throw new Error(`官方資料服務回應 HTTP ${response.status}`);
+        return response;
+      }
     } catch (error) { last = error; }
   }
   throw new Error(last instanceof Error && last.name === 'TimeoutError' ? '官方資料服務回應逾時，請稍後再試。' : `暫時無法連接官方資料服務。${last instanceof Error ? last.message : ''}`);
@@ -61,7 +88,7 @@ async function loadEnforcement(kind: 'redlight' | 'speed'): Promise<CameraData> 
   return { cameras, count: cameras.length, expectedCount: countResult.count, complete: true, fetchedAt: new Date().toISOString(), sourceLastModified: null, source };
 }
 async function loadSnapshots(): Promise<CameraData> {
-  const response = await officialFetch(snapshotInventory);
+  const response = await officialFetch(snapshotInventory, { allowedRedirectHosts: ['static.data.gov.hk'] });
   const raw = parser.parse(await response.text())?.['image-list']?.image;
   if (!raw) throw new Error('官方快拍名冊格式不符或未提供資料。');
   const rows = Array.isArray(raw) ? raw : [raw];
@@ -69,9 +96,9 @@ async function loadSnapshots(): Promise<CameraData> {
   validate(cameras, rows.length);
   return { cameras, count: cameras.length, expectedCount: rows.length, complete: true, fetchedAt: new Date().toISOString(), sourceLastModified: response.headers.get('Last-Modified'), source: snapshotInventory };
 }
-export async function getCameraData(kind: LayerKind, force = false): Promise<CameraData> {
+export async function getCameraData(kind: LayerKind): Promise<CameraData> {
   const entry = cached.get(kind);
-  if (!force && entry && entry.expires > Date.now()) return entry.data;
+  if (entry && entry.expires > Date.now()) return entry.data;
   const existing = pending.get(kind);
   if (existing) return existing;
   const task = (kind === 'snapshot' ? loadSnapshots() : loadEnforcement(kind)).then(data => {
