@@ -1,5 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
-import { Camera, CameraData, LayerKind, featureService, snapshotInventory } from './traffic';
+import { Camera, CameraData, LayerKind, featureService, snapshotInventory, snapshotInventoryEn } from './traffic';
 
 const parser = new XMLParser({ ignoreAttributes: true, parseTagValue: false, processEntities: true });
 const cached = new Map<LayerKind, { expires: number; data: CameraData }>();
@@ -7,6 +7,7 @@ const pending = new Map<LayerKind, Promise<CameraData>>();
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 const maxOfficialRedirects = 3;
 type OfficialFetchOptions = { allowedRedirectHosts?: readonly string[] };
+type SnapshotRow = { key: string; description: string; district?: string; region?: string; latitude: string | number; longitude: string | number; url: string };
 
 function isAllowedHttpsUrl(url: URL, allowedHosts: Set<string>) {
   return url.protocol === 'https:' && url.port === '' && !url.username && !url.password && allowedHosts.has(url.hostname);
@@ -88,11 +89,40 @@ async function loadEnforcement(kind: 'redlight' | 'speed'): Promise<CameraData> 
   return { cameras, count: cameras.length, expectedCount: countResult.count, complete: true, fetchedAt: new Date().toISOString(), sourceLastModified: null, source };
 }
 async function loadSnapshots(): Promise<CameraData> {
-  const response = await officialFetch(snapshotInventory, { allowedRedirectHosts: ['static.data.gov.hk'] });
+  const [response, englishResponse] = await Promise.all([
+    officialFetch(snapshotInventory, { allowedRedirectHosts: ['static.data.gov.hk'] }),
+    officialFetch(snapshotInventoryEn, { allowedRedirectHosts: ['static.data.gov.hk'] }).catch(() => null),
+  ]);
   const raw = parser.parse(await response.text())?.['image-list']?.image;
   if (!raw) throw new Error('官方快拍名冊格式不符或未提供資料。');
-  const rows = Array.isArray(raw) ? raw : [raw];
-  const cameras: Camera[] = rows.map(row => ({ id: `snapshot-${row.key}`, sourceId: row.key, kind: 'snapshot', name: row.description?.replace(/\s*\[[^\]]+\]$/, ''), lat: Number(row.latitude), lng: Number(row.longitude), district: row.district, region: row.region, imageUrl: row.url }));
+  const rows = (Array.isArray(raw) ? raw : [raw]) as SnapshotRow[];
+  let englishRows: SnapshotRow[] = [];
+  if (englishResponse) {
+    try {
+      const englishRaw = parser.parse(await englishResponse.text())?.['image-list']?.image;
+      englishRows = englishRaw ? (Array.isArray(englishRaw) ? englishRaw : [englishRaw]) as SnapshotRow[] : [];
+    } catch {
+      // The Traditional Chinese inventory remains authoritative if the optional translation feed is malformed.
+    }
+  }
+  const englishByKey = new Map<string, { description?: string; district?: string; region?: string }>(englishRows.map(row => [String(row.key), row]));
+  const cameras: Camera[] = rows.map(row => {
+    const english = englishByKey.get(String(row.key));
+    return {
+      id: `snapshot-${row.key}`,
+      sourceId: row.key,
+      kind: 'snapshot',
+      name: row.description?.replace(/\s*\[[^\]]+\]$/, ''),
+      nameEn: english?.description?.replace(/\s*\[[^\]]+\]$/, ''),
+      lat: Number(row.latitude),
+      lng: Number(row.longitude),
+      district: row.district,
+      districtEn: english?.district,
+      region: row.region,
+      regionEn: english?.region,
+      imageUrl: row.url,
+    };
+  });
   validate(cameras, rows.length);
   return { cameras, count: cameras.length, expectedCount: rows.length, complete: true, fetchedAt: new Date().toISOString(), sourceLastModified: response.headers.get('Last-Modified'), source: snapshotInventory };
 }

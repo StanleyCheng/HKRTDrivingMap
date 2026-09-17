@@ -1,153 +1,350 @@
 'use client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Image from 'next/image';
-import { Video, TrafficCone, Gauge, Layers, MapPin, ArrowUpRight, Info, RefreshCw, X, ShieldCheck, LoaderCircle, Clock3, Route } from 'lucide-react';
-import { Camera, CameraData, LayerKind, kinds, layers, hkTime, featureService, snapshotInventory } from '@/lib/traffic';
+import { ArrowUpRight, Clock3, Gauge, Info, Layers, LoaderCircle, MapPin, RefreshCw, Route, ShieldCheck, SlidersHorizontal, TrafficCone, Video, X } from 'lucide-react';
+import { formatRecordDate, messages } from '@/lib/i18n';
+import { Camera, CameraData, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn } from '@/lib/traffic';
 import TrafficMap from './traffic-map';
 
-type LayerState = { data?: CameraData; loading: boolean; error?: string };
+type LayerState = { data?: CameraData; loading: boolean; error: boolean };
 type Snapshot = { imageUrl: string; updatedAt: string | null; fetchedAt: string };
+
 const icons = { redlight: TrafficCone, speed: Gauge, snapshot: Video };
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.name === 'TypeError') return '網絡連線失敗，請檢查連線後重試。';
-  return error instanceof Error && error.name !== 'TimeoutError' ? error.message : fallback;
+const languageStorageKey = 'hk-traffic-language-v1';
+const compactLayoutQuery = '(max-width: 700px), (max-height: 520px) and (orientation: landscape)';
+const languageListeners = new Set<() => void>();
+let fallbackLanguage: Language | undefined;
+let storageWriteFailed = false;
+
+function getLanguageSnapshot(): Language {
+  if (storageWriteFailed && fallbackLanguage) return fallbackLanguage;
+  try {
+    const stored = window.localStorage.getItem(languageStorageKey);
+    if (stored === 'en' || stored === 'zh') {
+      fallbackLanguage = stored;
+      return stored;
+    }
+  } catch {
+    // Storage can be unavailable in locked-down browser contexts; use the browser language.
+  }
+  if (fallbackLanguage) return fallbackLanguage;
+  return navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en';
 }
 
-function SnapshotImage({ camera }: { camera: Camera }) {
+function getServerLanguageSnapshot(): Language {
+  return 'zh';
+}
+
+function subscribeLanguage(listener: () => void) {
+  languageListeners.add(listener);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === languageStorageKey || event.key === null) {
+      storageWriteFailed = false;
+      fallbackLanguage = event.newValue === 'en' || event.newValue === 'zh' ? event.newValue : undefined;
+      listener();
+    }
+  };
+  window.addEventListener('storage', onStorage);
+  return () => {
+    languageListeners.delete(listener);
+    window.removeEventListener('storage', onStorage);
+  };
+}
+
+function setStoredLanguage(language: Language) {
+  fallbackLanguage = language;
+  try {
+    window.localStorage.setItem(languageStorageKey, language);
+    storageWriteFailed = false;
+  } catch {
+    storageWriteFailed = true;
+    // The in-memory subscription still updates the current tab when storage is unavailable.
+  }
+  languageListeners.forEach(listener => listener());
+}
+
+function SnapshotImage({ camera, language }: { camera: Camera; language: Language }) {
+  const copy = messages[language];
   const [shot, setShot] = useState<Snapshot | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
+
   useEffect(() => {
     const abort = new AbortController();
     let busy = false;
     async function refresh() {
       if (busy) return;
-      busy = true; setLoading(true); setError('');
+      busy = true;
+      setLoading(true);
+      setError(false);
       try {
-        const r = await fetch(`/api/snapshot/${camera.sourceId}`, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(55000)]), cache: 'no-store' });
-        if (!r.ok) {
-          const data = await r.json() as { error?: string };
-          throw new Error(data.error || '快拍未能載入。');
-        }
-        const blob = await r.blob();
+        const response = await fetch(`/api/snapshot/${camera.sourceId}`, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(55000)]), cache: 'no-store' });
+        if (!response.ok) throw new Error('Snapshot request failed');
+        const blob = await response.blob();
         const imageUrl = URL.createObjectURL(blob);
         if (abort.signal.aborted) {
           URL.revokeObjectURL(imageUrl);
           return;
         }
-        const modified = r.headers.get('Last-Modified');
+        const modified = response.headers.get('Last-Modified');
         setShot({
           imageUrl,
           updatedAt: modified && !Number.isNaN(Date.parse(modified)) ? new Date(modified).toISOString() : null,
-          fetchedAt: r.headers.get('X-Snapshot-Fetched-At') ?? new Date().toISOString(),
+          fetchedAt: response.headers.get('X-Snapshot-Fetched-At') ?? new Date().toISOString(),
         });
-      } catch (e) { if (!abort.signal.aborted) setError(errorMessage(e, '快拍載入逾時，請重試。')); }
-      finally { busy = false; if (!abort.signal.aborted) setLoading(false); }
+      } catch {
+        if (!abort.signal.aborted) setError(true);
+      } finally {
+        busy = false;
+        if (!abort.signal.aborted) setLoading(false);
+      }
     }
     refresh();
-    const interval = setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 120000);
-    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, 120000);
+    const visible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
     document.addEventListener('visibilitychange', visible);
-    return () => { abort.abort(); clearInterval(interval); document.removeEventListener('visibilitychange', visible); };
+    return () => {
+      abort.abort();
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', visible);
+    };
   }, [camera.sourceId, tick]);
+
   useEffect(() => {
     const imageUrl = shot?.imageUrl;
-    return () => { if (imageUrl) URL.revokeObjectURL(imageUrl); };
+    return () => {
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+    };
   }, [shot?.imageUrl]);
-  const stale = Boolean(
-    shot?.updatedAt &&
-      Date.parse(shot.fetchedAt) - Date.parse(shot.updatedAt) > 10 * 60000,
-  );
+
+  const stale = Boolean(shot?.updatedAt && Date.parse(shot.fetchedAt) - Date.parse(shot.updatedAt) > 10 * 60000);
+  const cameraName = language === 'en' ? camera.nameEn || camera.name : camera.name;
+
   return <>
     <div className="snapshot-frame">
-      {shot && <Image src={shot.imageUrl} alt={`${camera.name}的官方交通快拍`} fill sizes="(max-width: 640px) 100vw, 300px" unoptimized onError={() => setError('影像無法顯示，請重試。')}/>}
-      {loading && !shot && <div className="image-status"><LoaderCircle size={18} className="spin"/>載入最新快拍</div>}
-      {error && <div className="image-status" role="alert"><div>{error}<br/><button className="text-button" onClick={() => setTick(t => t + 1)}>重新載入快拍</button></div></div>}
+      {shot && <Image src={shot.imageUrl} alt={copy.snapshotAlt(cameraName)} fill sizes="(max-width: 700px) 100vw, 300px" unoptimized onError={() => setError(true)}/>}
+      {loading && !shot && <div className="image-status" aria-live="polite"><LoaderCircle size={18} className="spin"/>{copy.loadingSnapshot}</div>}
+      {error && <div className="image-status" role="alert"><div>{shot ? copy.snapshotDisplayFailed : copy.snapshotTimeout}<br/><button className="text-button" onClick={() => setTick(value => value + 1)}>{copy.reloadSnapshot}</button></div></div>}
     </div>
-    <div className="snapshot-meta"><span className={`image-update ${stale ? 'stale' : ''}`}><Clock3 size={12}/>{shot?.updatedAt ? `影像更新 ${hkTime(shot.updatedAt, true)}` : shot ? '來源未提供影像更新時間' : '等待官方影像'}</span><button className="refresh-image" title="更新快拍" aria-label="更新快拍" disabled={loading} onClick={() => setTick(t => t + 1)}><RefreshCw size={14} className={loading ? 'spin' : ''}/></button></div>
-    {stale && <p className="subtle warning-text">此影像已超過 10 分鐘未更新，可能暫停服務。</p>}
-    <p className="subtle">每 2 分鐘自動重新讀取 · 香港時間<br/>更新時間取自官方影像檔案；拍攝時間以圖中標示為準。若顯示「No Service」，代表官方暫未提供影像。</p>
+    <div className="snapshot-meta">
+      <span className={`image-update ${stale ? 'stale' : ''}`}><Clock3 size={12}/>{shot?.updatedAt ? copy.snapshotUpdated(hkTime(shot.updatedAt, true, language)) : shot ? copy.snapshotNoUpdateTime : copy.snapshotWaiting}</span>
+      <button className="refresh-image" title={copy.refreshSnapshot} aria-label={copy.refreshSnapshot} disabled={loading} onClick={() => setTick(value => value + 1)}><RefreshCw size={14} className={loading ? 'spin' : ''}/></button>
+    </div>
+    {stale && <p className="subtle warning-text">{copy.snapshotStale}</p>}
+    <p className="subtle snapshot-note">{copy.snapshotNote}</p>
   </>;
 }
+
 export default function TrafficMonitor() {
+  const language = useSyncExternalStore(subscribeLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
+  const copy = messages[language];
+  const numberLocale = language === 'en' ? 'en-HK' : 'zh-HK';
   const [enabled, setEnabled] = useState<Record<LayerKind, boolean>>({ redlight: true, speed: true, snapshot: true });
-  const [states, setStates] = useState<Record<LayerKind, LayerState>>({ redlight: { loading: true }, speed: { loading: true }, snapshot: { loading: true } });
+  const [states, setStates] = useState<Record<LayerKind, LayerState>>({
+    redlight: { loading: true, error: false },
+    speed: { loading: true, error: false },
+    snapshot: { loading: true, error: false },
+  });
   const [selected, setSelected] = useState<Camera | null>(null);
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const details = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLElement>(null);
+  const mobilePanelButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const inflight = useRef(new Set<LayerKind>());
+
+  const closeMobilePanel = useCallback(() => {
+    setMobilePanelOpen(false);
+    setTimeout(() => mobilePanelButton.current?.focus(), 0);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = language === 'en' ? 'en-HK' : 'zh-HK';
+  }, [language]);
+
+  useEffect(() => {
+    const media = window.matchMedia(compactLayoutQuery);
+    if (!mobilePanelOpen || !media.matches) return;
+    const panelElement = panel.current;
+    if (!panelElement) return;
+    const focusable = () => Array.from(panelElement.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter(element => element.getClientRects().length > 0);
+    const focusFirst = requestAnimationFrame(() => focusable()[0]?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMobilePanel();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const elements = focusable();
+      if (!elements.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = elements[0];
+      const last = elements.at(-1)!;
+      if (event.shiftKey && (document.activeElement === first || !panelElement.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !panelElement.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      if (!panelElement.contains(event.target as Node)) focusable()[0]?.focus();
+    };
+    const onLayoutChange = (event: MediaQueryListEvent) => {
+      if (!event.matches) closeMobilePanel();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('focusin', onFocusIn);
+    media.addEventListener('change', onLayoutChange);
+    return () => {
+      cancelAnimationFrame(focusFirst);
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('focusin', onFocusIn);
+      media.removeEventListener('change', onLayoutChange);
+    };
+  }, [closeMobilePanel, mobilePanelOpen]);
+
   const fetchLayer = useCallback(async (kind: LayerKind) => {
     if (inflight.current.has(kind)) return;
     inflight.current.add(kind);
-    setStates(s => ({ ...s, [kind]: { ...s[kind], loading: true, error: undefined } }));
+    setStates(state => ({ ...state, [kind]: { ...state[kind], loading: true, error: false } }));
     try {
       const response = await fetch(`/api/cameras/${kind}`, { signal: AbortSignal.timeout(90000), cache: 'no-store' });
-      const data = await response.json() as CameraData & { error?: string };
-      if (!response.ok) throw new Error(data.error || '資料載入失敗。');
-      setStates(s => ({ ...s, [kind]: { data, loading: false } }));
-    } catch (e) {
-      setStates(s => ({ ...s, [kind]: { ...s[kind], loading: false, error: errorMessage(e, '連線逾時，請稍後重試。') } }));
-    } finally { inflight.current.delete(kind); }
+      if (!response.ok) throw new Error('Camera request failed');
+      const data = await response.json() as CameraData;
+      setStates(state => ({ ...state, [kind]: { data, loading: false, error: false } }));
+    } catch {
+      setStates(state => ({ ...state, [kind]: { ...state[kind], loading: false, error: true } }));
+    } finally {
+      inflight.current.delete(kind);
+    }
   }, []);
+
   useEffect(() => {
-    kinds.forEach(k => fetchLayer(k));
-    const interval = setInterval(() => { if (document.visibilityState === 'visible') kinds.forEach(k => fetchLayer(k)); }, 300000);
+    kinds.forEach(kind => fetchLayer(kind));
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') kinds.forEach(kind => fetchLayer(kind));
+    }, 300000);
     return () => clearInterval(interval);
   }, [fetchLayer]);
-  const cameras = useMemo(() => kinds.flatMap(k => enabled[k] ? states[k].data?.cameras ?? [] : []), [states, enabled]);
-  const total = kinds.reduce((n, k) => n + (states[k].data?.count ?? 0), 0);
-  const loading = kinds.some(k => states[k].loading);
-  const errors = kinds.some(k => states[k].error);
-  const complete = kinds.every(k => states[k].data?.complete) && !errors;
-  const times = kinds.flatMap(k => states[k].data ? [states[k].data!.fetchedAt] : []).sort();
+
+  const cameras = useMemo(() => kinds.flatMap(kind => enabled[kind] ? states[kind].data?.cameras ?? [] : []), [states, enabled]);
+  const total = kinds.reduce((count, kind) => count + (states[kind].data?.count ?? 0), 0);
+  const loading = kinds.some(kind => states[kind].loading);
+  const errors = kinds.some(kind => states[kind].error);
+  const complete = kinds.every(kind => states[kind].data?.complete) && !errors;
+  const times = kinds.flatMap(kind => states[kind].data ? [states[kind].data!.fetchedAt] : []).sort();
   const latest = times.at(-1);
+
   function toggle(kind: LayerKind) {
-    setEnabled(e => ({ ...e, [kind]: !e[kind] }));
+    setEnabled(current => ({ ...current, [kind]: !current[kind] }));
     if (selected?.kind === kind && enabled[kind]) setSelected(null);
   }
+
   const choose = useCallback((camera: Camera) => {
     setSelected(camera);
+    if (window.matchMedia(compactLayoutQuery).matches) setMobilePanelOpen(true);
     setTimeout(() => details.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'nearest' }), 80);
   }, []);
+
+  const selectedName = selected && (language === 'en' ? selected.nameEn || selected.name : selected.name);
+  const selectedDistrict = selected && (language === 'en' ? selected.districtEn || selected.district : selected.district);
+  const selectedRegion = selected && (language === 'en' ? selected.regionEn || selected.region : selected.region);
+
   return <main className="app-shell">
-    <header className="topbar"><div className="brand"><div className="brand-icon"><Route size={25}/></div><div><h1>香港實時交通資訊</h1><p>HONG KONG REAL-TIME TRAFFIC MONITOR</p></div></div><div className="header-meta"><span className="official-tag"><ShieldCheck size={15}/>官方開放數據</span><button className="source-button" onClick={() => dialog.current?.showModal()}><Info size={16}/><span>資料來源</span></button></div></header>
-    <div className="workspace">
-      <aside className="sidebar" aria-label="相機圖層及詳情"><div className="sidebar-scroll">
-        <p className="eyebrow">HONG KONG · TRAFFIC OVERVIEW</p>
-        <div className="overview-heading"><h2>全港相機一覽</h2><Layers size={19}/></div>
-        <div className="summary" aria-live="polite"><strong>{total ? total.toLocaleString() : loading ? '—' : '0'}</strong><span>個已公布位置</span>{complete && <small>完整名冊</small>}</div>
-        <div className="section-label"><h3>地圖圖層</h3><span>顯示 {cameras.length.toLocaleString()} 個</span></div>
-        <div className="layer-list">{kinds.map(kind => {
-          const item = layers[kind], state = states[kind], Icon = icons[kind];
-          return <div key={kind} className={`layer-card ${kind} ${enabled[kind] ? 'active' : ''}`}>
-            <button className="layer-toggle" role="switch" aria-checked={enabled[kind]} aria-label={`${item.name}圖層`} onClick={() => toggle(kind)}>
-              <span className="layer-symbol"><Icon size={21}/></span><span className="layer-copy"><strong>{item.name}</strong><span>{item.caption}</span></span>
-              <span className="layer-count">{state.loading && !state.data ? <LoaderCircle size={16} className="spin"/> : !enabled[kind] ? '—' : state.data ? state.data.count.toLocaleString() : '!'}</span><span className="switch"/>
-            </button>
-            {state.error && <div className="layer-error" role="alert">{state.data && '更新失敗，現顯示上次成功載入的名冊。'}{state.error} <button className="text-button" onClick={() => fetchLayer(kind)}>重試</button></div>}
-            {state.data?.count === 0 && <div className="layer-error">官方名冊暫無位置資料。</div>}
-          </div>;
-        })}</div>
-        <p className="layer-note">數字代表官方公布的位置數目，並非正在運作的相機數量。偵速機箱名冊不包括政府隧道及管制區。</p>
-        <div className="divider"/>
-        <div ref={details} className="detail" tabIndex={-1}><div className="selection-label"><h3>相機詳情</h3>{selected && <button className="close-button" aria-label="關閉相機詳情" onClick={() => setSelected(null)}><X size={16}/></button>}</div>
-          {selected ? <>
-            <div className="detail-kind"><span className="color-dot" style={{ background: layers[selected.kind].color }}/>{layers[selected.kind].name}<span>／ {selected.sourceId}</span></div>
-            <h4>{selected.name}</h4>
-            {selected.kind === 'snapshot' && <SnapshotImage camera={selected} key={selected.id}/>}
-            <dl>{selected.district && <><dt>所屬地區</dt><dd>{selected.region} · {selected.district}</dd></>}<dt>位置座標</dt><dd>{selected.lat.toFixed(6)}, {selected.lng.toFixed(6)}</dd>{selected.sourceUpdated && <><dt>記錄更新</dt><dd>{selected.sourceUpdated.replace(/^(\d{4})(\d{2})(\d{2})$/, '$1年$2月$3日')}</dd></>}{selected.remarks && <><dt>官方備註</dt><dd>{selected.remarks}</dd></>}</dl>
-            {selected.kind !== 'snapshot' && <p className="detail-note">此圖層提供{selected.kind === 'speed' ? '偵速攝影機機箱' : '衝紅燈攝影機系統路口'}位置。官方並無提供此相機的即時運作狀態或快拍影像。</p>}
-            <a className="detail-source" href={layers[selected.kind].source} target="_blank" rel="noreferrer">運輸署 · 官方資料來源 <ArrowUpRight size={13}/></a>
-          </> : <div className="empty-detail"><div className="empty-icon"><MapPin size={26}/></div><h4>每段路況，一目了然</h4><p>點選地圖上的相機標記<br/>查看位置詳情或最新交通快拍</p></div>}
+    <header className="topbar" inert={mobilePanelOpen || undefined}>
+      <div className="brand"><div className="brand-icon"><Route size={25}/></div><div><h1>{copy.brandTitle}</h1><p>{copy.brandSubtitle}</p></div></div>
+      <div className="header-meta">
+        <span className="official-tag"><ShieldCheck size={15}/>{copy.officialData}</span>
+        <div className="language-toggle" role="group" aria-label={copy.languageControl}>
+          <button type="button" aria-pressed={language === 'en'} title={copy.english} onClick={() => setStoredLanguage('en')}>ENG</button>
+          <button type="button" aria-pressed={language === 'zh'} title={copy.chinese} onClick={() => setStoredLanguage('zh')}>CHN</button>
         </div>
-      </div><footer className="sidebar-footer"><div className="connection" aria-live="polite"><span className={`connection-dot ${errors ? 'warning' : ''}`}/>{loading ? '正在讀取官方資料…' : errors ? '部分資料更新失敗' : latest ? `名冊讀取 ${hkTime(latest)}` : '未有可用資料'}</div><button className="icon-button" title="重新讀取所有官方名冊" aria-label="重新讀取所有官方名冊" disabled={loading} onClick={() => kinds.forEach(k => fetchLayer(k))}><RefreshCw size={14} className={loading ? 'spin' : ''}/></button></footer></aside>
-      <TrafficMap cameras={cameras} selected={selected} onSelect={choose} loading={loading} allDisabled={kinds.every(k => !enabled[k])} hasErrors={errors}/>
+        <button className="source-button" aria-label={copy.sources} onClick={() => dialog.current?.showModal()}><Info size={17}/><span>{copy.sources}</span></button>
+      </div>
+    </header>
+    <div className="workspace">
+      <TrafficMap cameras={cameras} selected={selected} onSelect={choose} loading={loading} allDisabled={kinds.every(kind => !enabled[kind])} hasErrors={errors} language={language} inactive={mobilePanelOpen}/>
+      <button className={`mobile-scrim ${mobilePanelOpen ? 'visible' : ''}`} aria-label={copy.closeControls} aria-hidden="true" tabIndex={-1} onClick={closeMobilePanel}/>
+      <aside ref={panel} className={`sidebar ${mobilePanelOpen ? 'mobile-open' : ''}`} aria-label={copy.sidebarLabel} role={mobilePanelOpen ? 'dialog' : undefined} aria-modal={mobilePanelOpen || undefined}>
+        <div className="mobile-panel-head"><strong>{copy.panelTitle}</strong><button className="close-button" aria-label={copy.closeControls} onClick={closeMobilePanel}><X size={19}/></button></div>
+        <div className="sidebar-scroll">
+          <p className="eyebrow">{copy.overviewEyebrow}</p>
+          <div className="overview-heading"><h2>{copy.overviewTitle}</h2><Layers size={19}/></div>
+          <div className="summary" aria-live="polite"><strong>{total ? total.toLocaleString(numberLocale) : loading ? '—' : '0'}</strong><span>{copy.publishedLocations}</span>{complete && <small>{copy.completeInventory}</small>}</div>
+          <div className="section-label"><h3>{copy.mapLayers}</h3><span>{copy.showingLocations(cameras.length.toLocaleString(numberLocale))}</span></div>
+          <div className="layer-list">{kinds.map(kind => {
+            const text = layerText(kind, language);
+            const state = states[kind];
+            const Icon = icons[kind];
+            return <div key={kind} className={`layer-card ${kind} ${enabled[kind] ? 'active' : ''}`}>
+              <button className="layer-toggle" role="switch" aria-checked={enabled[kind]} aria-label={copy.layerSwitch(text.name)} onClick={() => toggle(kind)}>
+                <span className="layer-symbol"><Icon size={21}/></span><span className="layer-copy"><strong>{text.name}</strong><span>{text.caption}</span></span>
+                <span className="layer-count">{state.loading && !state.data ? <LoaderCircle size={16} className="spin"/> : !enabled[kind] ? '—' : state.data ? state.data.count.toLocaleString(numberLocale) : '!'}</span><span className="switch"/>
+              </button>
+              {state.error && <div className="layer-error" role="alert">{state.data ? copy.layerUpdateFailed : copy.dataLoadFailed} <button className="text-button" onClick={() => fetchLayer(kind)}>{copy.retry}</button></div>}
+              {state.data?.count === 0 && <div className="layer-error">{copy.noOfficialLocations}</div>}
+            </div>;
+          })}</div>
+          <p className="layer-note">{copy.layerNote}</p>
+          <div className="divider"/>
+          <div ref={details} className="detail" tabIndex={-1}>
+            <div className="selection-label"><h3>{copy.cameraDetails}</h3>{selected && <button className="close-button" aria-label={copy.closeCameraDetails} onClick={() => setSelected(null)}><X size={16}/></button>}</div>
+            {selected ? <>
+              <div className="detail-kind"><span className="color-dot" style={{ background: layers[selected.kind].color }}/>{layerText(selected.kind, language).name}<span>／ {selected.sourceId}</span></div>
+              <h4>{selectedName}</h4>
+              {selected.kind === 'snapshot' && <SnapshotImage camera={selected} language={language} key={selected.id}/>}
+              <dl>
+                {selectedDistrict && <><dt>{copy.district}</dt><dd>{selectedRegion ? `${selectedRegion} · ` : ''}{selectedDistrict}</dd></>}
+                <dt>{copy.coordinates}</dt><dd>{selected.lat.toFixed(6)}, {selected.lng.toFixed(6)}</dd>
+                {selected.sourceUpdated && <><dt>{copy.recordUpdated}</dt><dd>{formatRecordDate(selected.sourceUpdated, language)}</dd></>}
+                {selected.remarks && <><dt>{copy.officialRemarks}</dt><dd>{selected.remarks}</dd></>}
+              </dl>
+              {selected.kind !== 'snapshot' && <p className="detail-note">{copy.layerDetail[selected.kind]}</p>}
+              <a className="detail-source" href={layers[selected.kind].source} target="_blank" rel="noreferrer">{copy.officialSource} <ArrowUpRight size={13}/></a>
+            </> : <div className="empty-detail"><div className="empty-icon"><MapPin size={26}/></div><h4>{copy.emptyDetailTitle}</h4><p>{copy.emptyDetailBody}</p></div>}
+          </div>
+        </div>
+        <footer className="sidebar-footer"><div className="connection" aria-live="polite"><span className={`connection-dot ${errors ? 'warning' : ''}`}/>{loading ? copy.loadingOfficialData : errors ? copy.partialUpdateFailure : latest ? copy.inventoryFetched(hkTime(latest, false, language)) : copy.noData}</div><button className="icon-button" title={copy.refreshAll} aria-label={copy.refreshAll} disabled={loading} onClick={() => kinds.forEach(kind => fetchLayer(kind))}><RefreshCw size={15} className={loading ? 'spin' : ''}/></button></footer>
+      </aside>
+      <nav className="mobile-dock" aria-label={copy.mapLayers} aria-hidden={mobilePanelOpen || undefined} inert={mobilePanelOpen || undefined}>
+        {kinds.map(kind => {
+          const Icon = icons[kind];
+          const text = layerText(kind, language);
+          return <button key={kind} className={`mobile-layer-button ${kind} ${enabled[kind] ? 'active' : ''}`} aria-label={copy.layerSwitch(text.name)} aria-pressed={enabled[kind]} onClick={() => toggle(kind)}><Icon size={19}/><span>{text.short}</span></button>;
+        })}
+        <button ref={mobilePanelButton} className="mobile-panel-button" aria-label={copy.openControls} aria-expanded={mobilePanelOpen} onClick={() => setMobilePanelOpen(true)}><SlidersHorizontal size={19}/><span>{selected ? copy.cameraDetails : copy.panelTitle}</span></button>
+      </nav>
     </div>
-    <dialog ref={dialog} className="sources-dialog" aria-labelledby="sources-title" onClick={e => { if (e.target === e.currentTarget) dialog.current?.close(); }}><div className="dialog-head"><h2 id="sources-title">資料來源與更新</h2><button className="close-button" aria-label="關閉資料來源" onClick={() => dialog.current?.close()}><X size={18}/></button></div><div className="dialog-body">
-      {kinds.map(kind => <section className="source-entry" key={kind}><h3><span className="color-dot" style={{ background: layers[kind].color }}/>{layers[kind].name}</h3><p>{kind === 'snapshot' ? '運輸署交通快拍完整位置名冊（XML）及官方 JPEG 影像。已選快拍每兩分鐘重新讀取，時間取自影像回應的 Last-Modified。' : `運輸署於空間數據共享平台（CSDI）公布的${kind === 'speed' ? '偵速機箱位置（不包括政府隧道及管制區）' : '裝設衝紅燈攝影機系統的路口'}。先查詢全部記錄編號及總數，再分批取得每個位置，並核對完整性。位置名冊按官方資料更新。`}</p><a href={layers[kind].source} target="_blank" rel="noreferrer">資料一線通 ↗</a><a href={kind === 'snapshot' ? snapshotInventory : featureService(kind) + '?f=pjson'} target="_blank" rel="noreferrer">{kind === 'snapshot' ? '完整位置 XML' : 'CSDI 官方 API'} ↗</a>{states[kind].data && <div className="source-check">已核對 {states[kind].data!.count.toLocaleString()} / {states[kind].data!.expectedCount.toLocaleString()} 筆 · {hkTime(states[kind].data!.fetchedAt, true)} 讀取{states[kind].error ? '（更新失敗，保留上次名冊）' : ''}</div>}</section>)}
-      <p className="dialog-footnote">所有位置及交通影像均取自香港政府，沒有模擬交通資料。名冊每五分鐘重新讀取。快拍為定時更新的靜態影像，並非直播；官方可能回傳「No Service」影像。本網站不代表香港特別行政區政府。</p>
-      <p className="dialog-footnote">底圖：<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap 貢獻者</a>（非政府底圖）。<a href="https://data.gov.hk/tc/terms-and-conditions" target="_blank" rel="noreferrer">政府開放數據使用條款</a>。</p>
-    </div></dialog>
+    <dialog ref={dialog} className="sources-dialog" aria-labelledby="sources-title" onClick={event => {
+      if (event.target === event.currentTarget) dialog.current?.close();
+    }}>
+      <div className="dialog-head"><h2 id="sources-title">{copy.sourceDialogTitle}</h2><button className="close-button" aria-label={copy.closeSources} onClick={() => dialog.current?.close()}><X size={18}/></button></div>
+      <div className="dialog-body">
+        {kinds.map(kind => {
+          const text = layerText(kind, language);
+          const data = states[kind].data;
+          return <section className="source-entry" key={kind}>
+            <h3><span className="color-dot" style={{ background: layers[kind].color }}/>{text.name}</h3>
+            <p>{copy.sourceDescriptions[kind]}</p>
+            <a href={layers[kind].source} target="_blank" rel="noreferrer">{copy.dataGovLink} ↗</a>
+            <a href={kind === 'snapshot' ? language === 'en' ? snapshotInventoryEn : snapshotInventory : featureService(kind) + '?f=pjson'} target="_blank" rel="noreferrer">{kind === 'snapshot' ? copy.locationXml : copy.officialApi} ↗</a>
+            {data && <div className="source-check">{copy.sourceChecked(data.count.toLocaleString(numberLocale), data.expectedCount.toLocaleString(numberLocale), hkTime(data.fetchedAt, true, language), states[kind].error)}</div>}
+          </section>;
+        })}
+        <p className="dialog-footnote">{copy.sourceFootnote}</p>
+        <p className="dialog-footnote">{copy.basemap}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">{copy.osmContributors}</a>{copy.nonGovernmentBasemap}<a href="https://data.gov.hk/tc/terms-and-conditions" target="_blank" rel="noreferrer">{copy.governmentTerms}</a>.</p>
+      </div>
+    </dialog>
   </main>;
 }
