@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Image from 'next/image';
-import { ArrowUpRight, Clock3, Gauge, Info, Layers, LoaderCircle, MapPin, RefreshCw, Route, ShieldCheck, SlidersHorizontal, TrafficCone, Video, X } from 'lucide-react';
+import { ArrowUpRight, Clock3, Gauge, Info, Layers, LoaderCircle, MapPin, RefreshCw, ShieldCheck, SlidersHorizontal, TrafficCone, Video, X } from 'lucide-react';
 import { formatRecordDate, messages } from '@/lib/i18n';
 import { Camera, CameraData, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn } from '@/lib/traffic';
 import TrafficMap from './traffic-map';
@@ -263,7 +263,7 @@ export default function TrafficMonitor() {
 
   return <main className="app-shell">
     <header className="topbar" inert={mobilePanelOpen || undefined}>
-      <div className="brand"><div className="brand-icon"><Route size={25}/></div><div><h1>{copy.brandTitle}</h1><p>{copy.brandSubtitle}</p></div></div>
+      <div className="brand"><div className="brand-icon"><Image src="/app-icon-192.png" alt="" width={43} height={43} priority/></div><div><h1>{copy.brandTitle}</h1><p>{copy.brandSubtitle}</p></div></div>
       <div className="header-meta">
         <span className="official-tag"><ShieldCheck size={15}/>{copy.officialData}</span>
         <div className="language-toggle" role="group" aria-label={copy.languageControl}>
