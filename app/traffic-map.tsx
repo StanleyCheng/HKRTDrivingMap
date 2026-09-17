@@ -9,6 +9,10 @@ const symbols = {
   redlight: '<rect x="8" y="2" width="8" height="20" rx="3"/><path d="M5 5h3m8 0h3M5 12h3m8 0h3M5 19h3m8 0h3"/><circle cx="12" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="17" r="1"/>',
   speed: '<path d="M4 18a9 9 0 1 1 16 0M12 13l5-5M6 9l1 1M12 5v2M4 15h2m12 0h2"/><circle cx="12" cy="14" r="2"/>',
   snapshot: '<rect x="3" y="6" width="14" height="12" rx="2"/><path d="m17 10 4-3v10l-4-3"/>',
+  flow: '<path d="M12 3l6 10h-3.5v8h-5v-8H6l6-10z"/>',
+  incident: '<path d="M12 3.5 2.5 20h19L12 3.5z"/><path d="M12 10v4.5m0 2.5v.5"/>',
+  parking: '<rect x="4" y="3" width="16" height="18" rx="3"/><path d="M10 17V7.5h3.4a3.1 3.1 0 0 1 0 6.2H10"/>',
+  rainfall: '<path d="M12 3.5s5.8 6.4 5.8 10.6a5.8 5.8 0 1 1-11.6 0C6.2 9.9 12 3.5 12 3.5z"/>',
 };
 type Props = { cameras: Camera[]; selected: Camera | null; onSelect: (camera: Camera) => void; loading: boolean; allDisabled: boolean; hasErrors: boolean; language: Language; inactive?: boolean };
 export default function TrafficMap({ cameras, selected, onSelect, loading, allDisabled, hasErrors, language, inactive = false }: Props) {
@@ -66,7 +70,7 @@ export default function TrafficMap({ cameras, selected, onSelect, loading, allDi
     markers.current.clear();
     group.addLayers(cameras.map(camera => {
       const name = language === 'en' ? camera.nameEn || camera.name : camera.name;
-      const icon = L.divIcon({ className: 'camera-marker', html: `<div class="marker-inner" style="--marker-color:${layers[camera.kind].color}"><svg viewBox="0 0 24 24">${symbols[camera.kind]}</svg></div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+      const icon = L.divIcon({ className: 'camera-marker', html: `<div class="marker-inner" style="--marker-color:${camera.color ?? layers[camera.kind].color}"><svg viewBox="0 0 24 24"${camera.rotation ? ` style="transform:rotate(${camera.rotation}deg)"` : ''}>${symbols[camera.kind]}</svg></div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
       const marker = L.marker([camera.lat, camera.lng], { icon, title: `${layerText(camera.kind, language).name}: ${name}`, alt: name, keyboard: true, cameraKind: camera.kind } as Leaflet.MarkerOptions);
       const label = document.createElement('span'); label.textContent = name;
       marker.bindTooltip(label, { direction: 'top', offset: [0, -12] });

@@ -28,6 +28,25 @@ type AppMessages = {
   recordUpdated: string;
   officialRemarks: string;
   layerDetail: Record<'redlight' | 'speed', string>;
+  liveDataTime: string;
+  speedNow: string;
+  speedLevels: Record<'free' | 'moderate' | 'slow' | 'unknown', string>;
+  noLiveSpeed: string;
+  directionLabel: string;
+  speedLayerNote: string;
+  parkingSpaces: string;
+  parkingNoLive: string;
+  heightLimitLabel: string;
+  metres: (height: string) => string;
+  openingStatusLabel: string;
+  rainfallAmount: string;
+  millimetres: (mm: string) => string;
+  rainfallNote: string;
+  incidentApproxNote: string;
+  incidentListTitle: (count: string) => string;
+  incidentViewOnMap: string;
+  incidentNoLocation: string;
+  incidentEmpty: string;
   officialSource: string;
   emptyDetailTitle: string;
   emptyDetailBody: string;
@@ -97,7 +116,19 @@ export const messages: Record<Language, AppMessages> = {
       redlight: '此圖層提供衝紅燈攝影機系統路口位置。官方並無提供此相機的即時運作狀態或快拍影像。',
       speed: '此圖層提供偵速攝影機機箱位置。官方並無提供此相機的即時運作狀態或快拍影像。',
     },
-    officialSource: '運輸署 · 官方資料來源', emptyDetailTitle: '每段路況，一目了然',
+    officialSource: '運輸署 · 官方資料來源',
+    liveDataTime: '數據時間', speedNow: '平均車速',
+    speedLevels: { free: '暢通', moderate: '一般', slow: '緩慢', unknown: '暫無讀數' },
+    noLiveSpeed: '官方暫未提供有效車速讀數', directionLabel: '行車方向',
+    speedLayerNote: '車速為探測器當刻平均讀數，僅反映主要道路局部情況。',
+    parkingSpaces: '私家車空位', parkingNoLive: '暫無實時空位數據',
+    heightLimitLabel: '高度限制', metres: height => `${height} 米`, openingStatusLabel: '開放狀態',
+    rainfallAmount: '過去一小時雨量', millimetres: mm => `${mm} 毫米`,
+    rainfallNote: '天文台提供分區最高雨量讀數；標記位置為分區參考點，並非量度站。',
+    incidentApproxNote: '此位置按路名經官方地址查詢服務推斷，僅為大約位置。',
+    incidentListTitle: count => `全部消息（${count}）`, incidentViewOnMap: '地圖', incidentNoLocation: '未能確定位置',
+    incidentEmpty: '現時沒有特別交通消息。',
+    emptyDetailTitle: '每段路況，一目了然',
     emptyDetailBody: '點選地圖上的相機標記，查看位置詳情或最新交通快拍。',
     loadingOfficialData: '正在讀取官方資料…', partialUpdateFailure: '部分資料更新失敗',
     inventoryFetched: time => `名冊讀取 ${time}`, noData: '未有可用資料', refreshAll: '重新讀取所有官方名冊',
@@ -107,6 +138,10 @@ export const messages: Record<Language, AppMessages> = {
       redlight: '運輸署於空間數據共享平台（CSDI）公布的裝設衝紅燈攝影機系統路口。先查詢全部記錄編號及總數，再分批取得每個位置，並核對完整性。位置名冊按官方資料更新。',
       speed: '運輸署於空間數據共享平台（CSDI）公布的偵速機箱位置（不包括政府隧道及管制區）。先查詢全部記錄編號及總數，再分批取得每個位置，並核對完整性。位置名冊按官方資料更新。',
       snapshot: '運輸署交通快拍完整位置名冊（XML）及官方 JPEG 影像。已選快拍每兩分鐘重新讀取，時間取自影像回應的 Last-Modified。',
+      flow: '運輸署「策略性／主要道路的交通數據」：先讀取探測器位置名冊（CSV，含 WGS84 座標），再結合每 1–2 分鐘更新的原始車速數據（XML），取各有效行車線的平均速度。車速只代表探測器當刻讀數。',
+      incident: '運輸署「特別交通消息」（XML），雙語對照。官方消息沒有座標；地圖標示是透過官方地址查詢服務（ALS）按路名推斷的大約位置，未能確定位置的消息只於列表顯示。',
+      parking: '資料一線通「停車場空置車位數據」（一鍵通版本）：結合停車場基本資料（位置、高度限制、開放時間）及實時私家車空位數目。',
+      rainfall: '香港天文台「過去一小時降雨量」開放數據（JSON，每 15 分鐘更新）。雨量為分區最高讀數，標記置於分區參考點。',
     },
     dataGovLink: '資料一線通', locationXml: '完整位置 XML', officialApi: 'CSDI 官方 API',
     sourceChecked: (count, expected, time, stale) => `已核對 ${count} / ${expected} 筆 · ${time} 讀取${stale ? '（更新失敗，保留上次名冊）' : ''}`,
@@ -142,7 +177,19 @@ export const messages: Record<Language, AppMessages> = {
       redlight: 'This layer shows red-light camera junctions. The official source does not provide live operating status or snapshot images for these cameras.',
       speed: 'This layer shows speed-camera housing locations. The official source does not provide live operating status or snapshot images for these cameras.',
     },
-    officialSource: 'Transport Department · Official source', emptyDetailTitle: 'See every road at a glance',
+    officialSource: 'Transport Department · Official source',
+    liveDataTime: 'Data time', speedNow: 'Average speed',
+    speedLevels: { free: 'Free flow', moderate: 'Moderate', slow: 'Slow', unknown: 'No reading' },
+    noLiveSpeed: 'No valid speed reading from the official source', directionLabel: 'Direction',
+    speedLayerNote: 'Speeds are current average readings at detectors and reflect only conditions on major roads.',
+    parkingSpaces: 'Private car spaces', parkingNoLive: 'No live vacancy data',
+    heightLimitLabel: 'Height limit', metres: height => `${height} m`, openingStatusLabel: 'Opening status',
+    rainfallAmount: 'Rainfall in the past hour', millimetres: mm => `${mm} mm`,
+    rainfallNote: 'HKO publishes district-maximum readings; markers sit at district reference points, not measuring stations.',
+    incidentApproxNote: 'Approximate location inferred from the road name via the official Address Lookup Service.',
+    incidentListTitle: count => `All notices (${count})`, incidentViewOnMap: 'Map', incidentNoLocation: 'No map location',
+    incidentEmpty: 'There are no special traffic news notices right now.',
+    emptyDetailTitle: 'See every road at a glance',
     emptyDetailBody: 'Select a camera marker on the map to view its location details or latest traffic snapshot.',
     loadingOfficialData: 'Loading official data…', partialUpdateFailure: 'Some data failed to update',
     inventoryFetched: time => `List fetched ${time}`, noData: 'No data available', refreshAll: 'Reload all official lists',
@@ -152,6 +199,10 @@ export const messages: Record<Language, AppMessages> = {
       redlight: 'Red-light camera junctions published by the Transport Department on the Common Spatial Data Infrastructure (CSDI). The app queries every record ID and the total count, loads locations in batches, and verifies completeness.',
       speed: 'Speed-camera housing locations published by the Transport Department on CSDI, excluding government tunnels and control areas. The app queries every record ID and the total count, loads locations in batches, and verifies completeness.',
       snapshot: 'The Transport Department’s complete traffic-snapshot location list (XML) and official JPEG images. The selected snapshot refreshes every two minutes; update time comes from the image response’s Last-Modified value.',
+      flow: 'The Transport Department’s Traffic Data of Strategic / Major Roads: the detector location list (CSV, WGS84 coordinates) joined with raw speed readings (XML, every 1–2 minutes), averaged across valid lanes. Speeds are point readings at detectors only.',
+      incident: 'The Transport Department’s Special Traffic News (XML), bilingual. Official notices carry no coordinates; map pins are approximate positions inferred from road names via the official Address Lookup Service (ALS). Notices without a confident match appear in the list only.',
+      parking: 'The DATA.GOV.HK one-stop car park information and vacancy API: basic car park details (location, height limit, opening hours) merged with real-time private-car vacancy counts.',
+      rainfall: 'Hong Kong Observatory “Rainfall in the past hour” open data (JSON, every 15 minutes). Readings are district maxima; markers sit at district reference points, not at measuring stations.',
     },
     dataGovLink: 'DATA.GOV.HK', locationXml: 'Complete location XML', officialApi: 'Official CSDI API',
     sourceChecked: (count, expected, time, stale) => `Verified ${count} / ${expected} records · fetched ${time}${stale ? ' (update failed; last list retained)' : ''}`,

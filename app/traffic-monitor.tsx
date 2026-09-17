@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Image from 'next/image';
-import { ArrowUpRight, Clock3, Gauge, Info, Layers, LoaderCircle, MapPin, RefreshCw, ShieldCheck, SlidersHorizontal, TrafficCone, Video, X } from 'lucide-react';
+import { ArrowUpRight, Clock3, CloudRain, Gauge, Info, Layers, LoaderCircle, MapPin, Navigation, RefreshCw, ShieldCheck, SlidersHorizontal, SquareParking, TrafficCone, TriangleAlert, Video, X } from 'lucide-react';
 import { formatRecordDate, messages } from '@/lib/i18n';
-import { Camera, CameraData, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn } from '@/lib/traffic';
+import { Camera, CameraData, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn, speedLevelColors } from '@/lib/traffic';
 import TrafficMap from './traffic-map';
 
 type LayerState = { data?: CameraData; loading: boolean; error: boolean };
 type Snapshot = { imageUrl: string; updatedAt: string | null; fetchedAt: string };
 
-const icons = { redlight: TrafficCone, speed: Gauge, snapshot: Video };
+const icons = { redlight: TrafficCone, speed: Gauge, snapshot: Video, flow: Navigation, incident: TriangleAlert, parking: SquareParking, rainfall: CloudRain };
 const languageStorageKey = 'hk-traffic-language-v1';
 const compactLayoutQuery = '(max-width: 700px), (max-height: 520px) and (orientation: landscape)';
 const languageListeners = new Set<() => void>();
@@ -145,11 +145,15 @@ export default function TrafficMonitor() {
   const language = useSyncExternalStore(subscribeLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
   const copy = messages[language];
   const numberLocale = language === 'en' ? 'en-HK' : 'zh-HK';
-  const [enabled, setEnabled] = useState<Record<LayerKind, boolean>>({ redlight: true, speed: true, snapshot: true });
+  const [enabled, setEnabled] = useState<Record<LayerKind, boolean>>({ flow: true, incident: true, redlight: true, speed: true, snapshot: true, parking: true, rainfall: true });
   const [states, setStates] = useState<Record<LayerKind, LayerState>>({
+    flow: { loading: true, error: false },
+    incident: { loading: true, error: false },
     redlight: { loading: true, error: false },
     speed: { loading: true, error: false },
     snapshot: { loading: true, error: false },
+    parking: { loading: true, error: false },
+    rainfall: { loading: true, error: false },
   });
   const [selected, setSelected] = useState<Camera | null>(null);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
@@ -293,7 +297,22 @@ export default function TrafficMonitor() {
                 <span className="layer-count">{state.loading && !state.data ? <LoaderCircle size={16} className="spin"/> : !enabled[kind] ? '—' : state.data ? state.data.count.toLocaleString(numberLocale) : '!'}</span><span className="switch"/>
               </button>
               {state.error && <div className="layer-error" role="alert">{state.data ? copy.layerUpdateFailed : copy.dataLoadFailed} <button className="text-button" onClick={() => fetchLayer(kind)}>{copy.retry}</button></div>}
-              {state.data?.count === 0 && <div className="layer-error">{copy.noOfficialLocations}</div>}
+              {state.data?.count === 0 && kind !== 'incident' && <div className="layer-error">{copy.noOfficialLocations}</div>}
+              {kind === 'incident' && state.data && (
+                state.data.notices?.length ? <details className="incident-notices">
+                  <summary>{copy.incidentListTitle(state.data.notices.length.toLocaleString(numberLocale))}</summary>
+                  <ul>{state.data.notices.map(notice => <li key={notice.id}>
+                    <span className="notice-text">{language === 'en' ? notice.textEn || notice.text : notice.text || notice.textEn}</span>
+                    <span className="notice-meta">
+                      <time>{hkTime(notice.time, false, language)}</time>
+                      {notice.cameraId
+                        ? <button className="text-button" onClick={() => { const target = state.data?.cameras.find(camera => camera.id === notice.cameraId); if (target) choose(target); }}>{copy.incidentViewOnMap}</button>
+                        : <em>{copy.incidentNoLocation}</em>}
+                    </span>
+                  </li>)}
+                  </ul>
+                </details> : <div className="incident-empty">{copy.incidentEmpty}</div>
+              )}
             </div>;
           })}</div>
           <p className="layer-note">{copy.layerNote}</p>
@@ -301,16 +320,38 @@ export default function TrafficMonitor() {
           <div ref={details} className="detail" tabIndex={-1}>
             <div className="selection-label"><h3>{copy.cameraDetails}</h3>{selected && <button className="close-button" aria-label={copy.closeCameraDetails} onClick={() => setSelected(null)}><X size={16}/></button>}</div>
             {selected ? <>
-              <div className="detail-kind"><span className="color-dot" style={{ background: layers[selected.kind].color }}/>{layerText(selected.kind, language).name}<span>／ {selected.sourceId}</span></div>
+              <div className="detail-kind"><span className="color-dot" style={{ background: selected.color ?? layers[selected.kind].color }}/>{layerText(selected.kind, language).name}<span>／ {selected.sourceId}</span></div>
               <h4>{selectedName}</h4>
               {selected.kind === 'snapshot' && <SnapshotImage camera={selected} language={language} key={selected.id}/>}
+              {selected.kind === 'flow' && <div className="live-figure">
+                <strong style={{ color: speedLevelColors[selected.level ?? 'unknown'] }}>{selected.speedKmh === null || selected.speedKmh === undefined ? '—' : selected.speedKmh}<small>km/h</small></strong>
+                <span className="level-badge" style={{ background: speedLevelColors[selected.level ?? 'unknown'] }}>{copy.speedLevels[selected.level ?? 'unknown']}</span>
+                <span className="live-label">{copy.speedNow}</span>
+              </div>}
+              {selected.kind === 'parking' && <div className="live-figure">
+                <strong>{selected.vacancy === null || selected.vacancy === undefined ? '—' : selected.vacancy.toLocaleString(numberLocale)}</strong>
+                <span className="live-label">{selected.vacancy === null || selected.vacancy === undefined ? copy.parkingNoLive : copy.parkingSpaces}</span>
+              </div>}
+              {selected.kind === 'parking' && selected.remarks && <p className="detail-address">{selected.remarks}</p>}
+              {selected.kind === 'rainfall' && selected.rainfallMm !== undefined && <div className="live-figure">
+                <strong>{selected.rainfallMm}</strong>
+                <span className="live-label">{copy.millimetres(String(selected.rainfallMm))} · {copy.rainfallAmount}</span>
+              </div>}
+              {selected.kind === 'incident' && <p className="incident-text">{(language === 'en' ? selected.textEn || selected.text : selected.text || selected.textEn)?.trim()}</p>}
               <dl>
                 {selectedDistrict && <><dt>{copy.district}</dt><dd>{selectedRegion ? `${selectedRegion} · ` : ''}{selectedDistrict}</dd></>}
+                {selected.kind === 'flow' && selected.remarks && <><dt>{copy.directionLabel}</dt><dd>{selected.remarks}</dd></>}
+                {selected.kind === 'parking' && selected.heightLimit !== undefined && <><dt>{copy.heightLimitLabel}</dt><dd>{copy.metres(String(selected.heightLimit))}</dd></>}
+                {selected.kind === 'parking' && selected.openingStatus && <><dt>{copy.openingStatusLabel}</dt><dd>{selected.openingStatus}</dd></>}
                 <dt>{copy.coordinates}</dt><dd>{selected.lat.toFixed(6)}, {selected.lng.toFixed(6)}</dd>
                 {selected.sourceUpdated && <><dt>{copy.recordUpdated}</dt><dd>{formatRecordDate(selected.sourceUpdated, language)}</dd></>}
-                {selected.remarks && <><dt>{copy.officialRemarks}</dt><dd>{selected.remarks}</dd></>}
+                {selected.kind !== 'flow' && selected.kind !== 'parking' && selected.remarks && <><dt>{copy.officialRemarks}</dt><dd>{selected.remarks}</dd></>}
+                {selected.dataUpdated && <><dt>{copy.liveDataTime}</dt><dd>{hkTime(selected.dataUpdated, true, language)}</dd></>}
               </dl>
-              {selected.kind !== 'snapshot' && <p className="detail-note">{copy.layerDetail[selected.kind]}</p>}
+              {(selected.kind === 'redlight' || selected.kind === 'speed') && <p className="detail-note">{copy.layerDetail[selected.kind]}</p>}
+              {selected.kind === 'flow' && <p className="detail-note">{copy.speedLayerNote}</p>}
+              {selected.kind === 'rainfall' && <p className="detail-note">{copy.rainfallNote}</p>}
+              {selected.kind === 'incident' && <p className="detail-note">{copy.incidentApproxNote}</p>}
               <a className="detail-source" href={layers[selected.kind].source} target="_blank" rel="noreferrer">{copy.officialSource} <ArrowUpRight size={13}/></a>
             </> : <div className="empty-detail"><div className="empty-icon"><MapPin size={26}/></div><h4>{copy.emptyDetailTitle}</h4><p>{copy.emptyDetailBody}</p></div>}
           </div>
@@ -338,7 +379,7 @@ export default function TrafficMonitor() {
             <h3><span className="color-dot" style={{ background: layers[kind].color }}/>{text.name}</h3>
             <p>{copy.sourceDescriptions[kind]}</p>
             <a href={layers[kind].source} target="_blank" rel="noreferrer">{copy.dataGovLink} ↗</a>
-            <a href={kind === 'snapshot' ? language === 'en' ? snapshotInventoryEn : snapshotInventory : featureService(kind) + '?f=pjson'} target="_blank" rel="noreferrer">{kind === 'snapshot' ? copy.locationXml : copy.officialApi} ↗</a>
+            {(kind === 'redlight' || kind === 'speed' || kind === 'snapshot') && <a href={kind === 'snapshot' ? language === 'en' ? snapshotInventoryEn : snapshotInventory : featureService(kind) + '?f=pjson'} target="_blank" rel="noreferrer">{kind === 'snapshot' ? copy.locationXml : copy.officialApi} ↗</a>}
             {data && <div className="source-check">{copy.sourceChecked(data.count.toLocaleString(numberLocale), data.expectedCount.toLocaleString(numberLocale), hkTime(data.fetchedAt, true, language), states[kind].error)}</div>}
           </section>;
         })}
