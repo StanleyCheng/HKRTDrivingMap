@@ -1,10 +1,10 @@
-# 香港實時交通資訊
+# HKRTDrivingMap — 香港實時交通資訊
 
 Hong Kong Real-Time Traffic Monitor. Responsive Traditional Chinese map with all officially published red-light junctions, speed-enforcement housings and traffic snapshot locations. No application authentication, mock locations, static fallback datasets, or API keys.
 
 ## Live site
 
-[Open the Hong Kong Real-Time Traffic Monitor](https://hk-real-time-traffic.stanley-it.workers.dev/)
+[Open the Hong Kong Real-Time Traffic Monitor](https://hk-rt-driving-map.stanley-it.workers.dev/)
 
 ## Run
 
