@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import Image from 'next/image';
 import { ArrowUpRight, Clock3, CloudRain, Gauge, Info, Layers, LoaderCircle, MapPin, Navigation, RefreshCw, ShieldCheck, SlidersHorizontal, SquareParking, TrafficCone, TriangleAlert, Video, X } from 'lucide-react';
 import { formatRecordDate, messages } from '@/lib/i18n';
+import { getCameraData } from '@/lib/traffic-client';
 import { Camera, CameraData, FlowSegment, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn, speedLevelColors } from '@/lib/traffic';
 import TrafficMap from './traffic-map';
 
@@ -72,34 +73,26 @@ function SnapshotImage({ camera, language }: { camera: Camera; language: Languag
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    const abort = new AbortController();
     let busy = false;
-    async function refresh() {
+    function refresh() {
       if (busy) return;
       busy = true;
       setLoading(true);
       setError(false);
-      try {
-        const response = await fetch(`/api/snapshot/${camera.sourceId}`, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(55000)]), cache: 'no-store' });
-        if (!response.ok) throw new Error('Snapshot request failed');
-        const blob = await response.blob();
-        const imageUrl = URL.createObjectURL(blob);
-        if (abort.signal.aborted) {
-          URL.revokeObjectURL(imageUrl);
-          return;
-        }
-        const modified = response.headers.get('Last-Modified');
-        setShot({
-          imageUrl,
-          updatedAt: modified && !Number.isNaN(Date.parse(modified)) ? new Date(modified).toISOString() : null,
-          fetchedAt: response.headers.get('X-Snapshot-Fetched-At') ?? new Date().toISOString(),
-        });
-      } catch {
-        if (!abort.signal.aborted) setError(true);
-      } finally {
+      // Static build loads the official image directly; the cache-buster forces a fresh frame.
+      const imageUrl = `${camera.imageUrl}${camera.imageUrl?.includes('?') ? '&' : '?'}_=${Date.now()}`;
+      const probe = new window.Image();
+      probe.onload = () => {
+        setShot({ imageUrl, updatedAt: new Date().toISOString(), fetchedAt: new Date().toISOString() });
         busy = false;
-        if (!abort.signal.aborted) setLoading(false);
-      }
+        setLoading(false);
+      };
+      probe.onerror = () => {
+        setError(true);
+        busy = false;
+        setLoading(false);
+      };
+      probe.src = imageUrl;
     }
     refresh();
     const interval = setInterval(() => {
@@ -110,18 +103,10 @@ function SnapshotImage({ camera, language }: { camera: Camera; language: Languag
     };
     document.addEventListener('visibilitychange', visible);
     return () => {
-      abort.abort();
       clearInterval(interval);
       document.removeEventListener('visibilitychange', visible);
     };
-  }, [camera.sourceId, tick]);
-
-  useEffect(() => {
-    const imageUrl = shot?.imageUrl;
-    return () => {
-      if (imageUrl) URL.revokeObjectURL(imageUrl);
-    };
-  }, [shot?.imageUrl]);
+  }, [camera.imageUrl, tick]);
 
   const stale = Boolean(shot?.updatedAt && Date.parse(shot.fetchedAt) - Date.parse(shot.updatedAt) > 10 * 60000);
   const cameraName = language === 'en' ? camera.nameEn || camera.name : camera.name;
@@ -224,9 +209,7 @@ export default function TrafficMonitor() {
     inflight.current.add(kind);
     setStates(state => ({ ...state, [kind]: { ...state[kind], loading: true, error: false } }));
     try {
-      const response = await fetch(`/api/cameras/${kind}`, { signal: AbortSignal.timeout(90000), cache: 'no-store' });
-      if (!response.ok) throw new Error('Camera request failed');
-      const data = await response.json() as CameraData;
+      const data = await getCameraData(kind);
       setStates(state => ({ ...state, [kind]: { data, loading: false, error: false } }));
     } catch {
       setStates(state => ({ ...state, [kind]: { ...state[kind], loading: false, error: true } }));
@@ -291,7 +274,7 @@ export default function TrafficMonitor() {
 
   return <main className="app-shell">
     <header className="topbar" inert={mobilePanelOpen || undefined}>
-      <div className="brand"><div className="brand-icon"><Image src="/app-icon-192.png" alt="" width={43} height={43} priority/></div><div><h1>{copy.brandTitle}</h1></div></div>
+      <div className="brand"><div className="brand-icon"><Image src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/app-icon-192.png`} alt="" width={43} height={43} priority/></div><div><h1>{copy.brandTitle}</h1></div></div>
       <div className="header-meta">
         {states.flow.loading && !states.flow.data && <span className="live-loading-dot" role="status" title={copy.loadingLiveSpeeds} aria-label={copy.loadingLiveSpeeds}/>}
         <span className="official-tag"><ShieldCheck size={15}/>{copy.officialData}</span>

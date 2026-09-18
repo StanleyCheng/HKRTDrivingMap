@@ -1,22 +1,26 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+// Static export is served under a sub-path; Next does not prefix basePath onto
+// absolute metadata asset URLs, so prefix them explicitly for that build.
+const assetBase = process.env.STATIC_EXPORT === "1" ? "/HKRTDrivingMap" : "";
+
 export const metadata: Metadata = {
   title: "香港即時駕駛地圖 | Hong Kong RT Driving Map",
   description: "一站式查看全港衝紅燈攝影機、偵速攝影機、運輸署交通快拍、實時路段車速、特別交通消息、停車場空位及天文台雨量。官方開放數據，毋須登入。 | One-stop view of red-light cameras, speed cameras, traffic snapshots, live road-segment speeds, incidents, parking vacancy and HKO rainfall. Official open data.",
-  manifest: "/site.webmanifest",
+  manifest: `${assetBase}/site.webmanifest`,
   other: {
     "codex-preview": "development",
   },
   icons: {
     icon: [
-      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
-      { url: "/app-icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/app-icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: `${assetBase}/favicon-32x32.png`, sizes: "32x32", type: "image/png" },
+      { url: `${assetBase}/app-icon-192.png`, sizes: "192x192", type: "image/png" },
+      { url: `${assetBase}/app-icon-512.png`, sizes: "512x512", type: "image/png" },
     ],
-    shortcut: "/favicon-32x32.png",
+    shortcut: `${assetBase}/favicon-32x32.png`,
     apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+      { url: `${assetBase}/apple-touch-icon.png`, sizes: "180x180", type: "image/png" },
     ],
   },
 };

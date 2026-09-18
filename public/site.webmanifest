@@ -2,18 +2,18 @@
   "name": "Hong Kong RT Driving Map",
   "short_name": "HK RT Driving",
   "description": "Official Hong Kong government open-data driving map: live road-segment speeds, traffic snapshots, camera locations, incidents, parking vacancy and rainfall.",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#071f2b",
   "theme_color": "#071f2b",
   "icons": [
     {
-      "src": "/app-icon-192.png",
+      "src": "app-icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/app-icon-512.png",
+      "src": "app-icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }

@@ -45,3 +45,6 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+
+# Static-export backup of app/api if build-static is interrupted
+/.api-backup-*/
