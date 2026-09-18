@@ -4,7 +4,7 @@ Hong Kong RT Driving Map. Responsive bilingual (zh-HK/en-HK) map with officially
 
 ## Live site
 
-[Open the Hong Kong RT Driving Map](https://hk-rt-driving-map.stanley-it.workers.dev/)
+[Open the Hong Kong RT Driving Map]((https://stanleycheng.github.io/HKRTDrivingMap/))
 
 ## Run
 
