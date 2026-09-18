@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import Image from 'next/image';
 import { ArrowUpRight, Clock3, CloudRain, Gauge, Info, Layers, LoaderCircle, MapPin, Navigation, RefreshCw, ShieldCheck, SlidersHorizontal, SquareParking, TrafficCone, TriangleAlert, Video, X } from 'lucide-react';
 import { formatRecordDate, messages } from '@/lib/i18n';
-import { Camera, CameraData, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn, speedLevelColors } from '@/lib/traffic';
+import { Camera, CameraData, FlowSegment, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn, speedLevelColors } from '@/lib/traffic';
 import TrafficMap from './traffic-map';
 
 type LayerState = { data?: CameraData; loading: boolean; error: boolean };
@@ -156,6 +156,7 @@ export default function TrafficMonitor() {
     rainfall: { loading: true, error: false },
   });
   const [selected, setSelected] = useState<Camera | null>(null);
+  const [showDetectors, setShowDetectors] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const details = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
@@ -242,7 +243,11 @@ export default function TrafficMonitor() {
     return () => clearInterval(interval);
   }, [fetchLayer]);
 
-  const cameras = useMemo(() => kinds.flatMap(kind => enabled[kind] ? states[kind].data?.cameras ?? [] : []), [states, enabled]);
+  const cameras = useMemo(() => kinds.flatMap(kind => {
+    if (!enabled[kind]) return [];
+    if (kind === 'flow') return showDetectors ? states.flow.data?.cameras ?? [] : [];
+    return states[kind].data?.cameras ?? [];
+  }), [states, enabled, showDetectors]);
   const total = kinds.reduce((count, kind) => count + (states[kind].data?.count ?? 0), 0);
   const loading = kinds.some(kind => states[kind].loading);
   const errors = kinds.some(kind => states[kind].error);
@@ -261,13 +266,32 @@ export default function TrafficMonitor() {
     setTimeout(() => details.current?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'nearest' }), 80);
   }, []);
 
+  const onSelectSegment = useCallback((segment: FlowSegment) => {
+    const mid = segment.path[Math.floor(segment.path.length / 2)] ?? segment.path[0] ?? [0, 0];
+    const synthetic: Camera = {
+      id: segment.id,
+      sourceId: String(segment.routeId),
+      kind: 'flow',
+      name: segment.name,
+      nameEn: segment.nameEn,
+      lat: mid[0],
+      lng: mid[1],
+      speedKmh: segment.speedKmh,
+      level: segment.level,
+      color: speedLevelColors[segment.level],
+      remarks: segment.routeNum != null ? String(segment.routeNum) : undefined,
+      dataUpdated: states.flow.data?.segmentsUpdated,
+    };
+    choose(synthetic);
+  }, [choose, states.flow.data?.segmentsUpdated]);
+
   const selectedName = selected && (language === 'en' ? selected.nameEn || selected.name : selected.name);
   const selectedDistrict = selected && (language === 'en' ? selected.districtEn || selected.district : selected.district);
   const selectedRegion = selected && (language === 'en' ? selected.regionEn || selected.region : selected.region);
 
   return <main className="app-shell">
     <header className="topbar" inert={mobilePanelOpen || undefined}>
-      <div className="brand"><div className="brand-icon"><Image src="/app-icon-192.png" alt="" width={43} height={43} priority/></div><div><h1>{copy.brandTitle}</h1><p>{copy.brandSubtitle}</p></div></div>
+      <div className="brand"><div className="brand-icon"><Image src="/app-icon-192.png" alt="" width={43} height={43} priority/></div><div><h1>{copy.brandTitle}</h1></div></div>
       <div className="header-meta">
         <span className="official-tag"><ShieldCheck size={15}/>{copy.officialData}</span>
         <div className="language-toggle" role="group" aria-label={copy.languageControl}>
@@ -278,7 +302,7 @@ export default function TrafficMonitor() {
       </div>
     </header>
     <div className="workspace">
-      <TrafficMap cameras={cameras} selected={selected} onSelect={choose} loading={loading} allDisabled={kinds.every(kind => !enabled[kind])} hasErrors={errors} language={language} inactive={mobilePanelOpen}/>
+      <TrafficMap cameras={cameras} segments={enabled.flow ? states.flow.data?.segments : undefined} selected={selected} selectedSegmentId={selected?.id && selected.id.startsWith('flow-segment-') ? selected.id : null} onSelect={choose} onSelectSegment={onSelectSegment} loading={loading} allDisabled={kinds.every(kind => !enabled[kind])} hasErrors={errors} language={language} inactive={mobilePanelOpen}/>
       <button className={`mobile-scrim ${mobilePanelOpen ? 'visible' : ''}`} aria-label={copy.closeControls} aria-hidden="true" tabIndex={-1} onClick={closeMobilePanel}/>
       <aside ref={panel} className={`sidebar ${mobilePanelOpen ? 'mobile-open' : ''}`} aria-label={copy.sidebarLabel} role={mobilePanelOpen ? 'dialog' : undefined} aria-modal={mobilePanelOpen || undefined}>
         <div className="mobile-panel-head"><strong>{copy.panelTitle}</strong><button className="close-button" aria-label={copy.closeControls} onClick={closeMobilePanel}><X size={19}/></button></div>
@@ -296,6 +320,12 @@ export default function TrafficMonitor() {
                 <span className="layer-symbol"><Icon size={21}/></span><span className="layer-copy"><strong>{text.name}</strong><span>{text.caption}</span></span>
                 <span className="layer-count">{state.loading && !state.data ? <LoaderCircle size={16} className="spin"/> : !enabled[kind] ? '—' : state.data ? state.data.count.toLocaleString(numberLocale) : '!'}</span><span className="switch"/>
               </button>
+              {kind === 'flow' && enabled.flow && state.data && state.data.count > 0 && (
+                <button className={`detector-toggle ${showDetectors ? 'active' : ''}`} role="switch" aria-checked={showDetectors} aria-label={copy.showDetectors} onClick={() => setShowDetectors(v => !v)}>
+                  <span>{copy.showDetectors} <span className="detector-count">{state.data.count.toLocaleString(numberLocale)}</span></span>
+                  <span className="switch"/>
+                </button>
+              )}
               {state.error && <div className="layer-error" role="alert">{state.data ? copy.layerUpdateFailed : copy.dataLoadFailed} <button className="text-button" onClick={() => fetchLayer(kind)}>{copy.retry}</button></div>}
               {state.data?.count === 0 && kind !== 'incident' && <div className="layer-error">{copy.noOfficialLocations}</div>}
               {kind === 'incident' && state.data && (
@@ -340,7 +370,7 @@ export default function TrafficMonitor() {
               {selected.kind === 'incident' && <p className="incident-text">{(language === 'en' ? selected.textEn || selected.text : selected.text || selected.textEn)?.trim()}</p>}
               <dl>
                 {selectedDistrict && <><dt>{copy.district}</dt><dd>{selectedRegion ? `${selectedRegion} · ` : ''}{selectedDistrict}</dd></>}
-                {selected.kind === 'flow' && selected.remarks && <><dt>{copy.directionLabel}</dt><dd>{selected.remarks}</dd></>}
+                {selected.kind === 'flow' && selected.remarks && <><dt>{selected.id.startsWith('flow-segment-') ? copy.routeNumberLabel : copy.directionLabel}</dt><dd>{selected.remarks}</dd></>}
                 {selected.kind === 'parking' && selected.heightLimit !== undefined && <><dt>{copy.heightLimitLabel}</dt><dd>{copy.metres(String(selected.heightLimit))}</dd></>}
                 {selected.kind === 'parking' && selected.openingStatus && <><dt>{copy.openingStatusLabel}</dt><dd>{selected.openingStatus}</dd></>}
                 <dt>{copy.coordinates}</dt><dd>{selected.lat.toFixed(6)}, {selected.lng.toFixed(6)}</dd>

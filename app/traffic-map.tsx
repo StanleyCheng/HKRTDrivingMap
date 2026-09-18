@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { LocateFixed, Plus, Minus, LoaderCircle, MousePointer2 } from 'lucide-react';
 import type * as Leaflet from 'leaflet';
 import { messages } from '@/lib/i18n';
-import { Camera, Language, layerText, layers } from '@/lib/traffic';
+import { Camera, FlowSegment, Language, layerText, layers, speedLevelColors } from '@/lib/traffic';
 
 const symbols = {
   redlight: '<rect x="8" y="2" width="8" height="20" rx="3"/><path d="M5 5h3m8 0h3M5 12h3m8 0h3M5 19h3m8 0h3"/><circle cx="12" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="17" r="1"/>',
@@ -14,8 +14,8 @@ const symbols = {
   parking: '<rect x="4" y="3" width="16" height="18" rx="3"/><path d="M10 17V7.5h3.4a3.1 3.1 0 0 1 0 6.2H10"/>',
   rainfall: '<path d="M12 3.5s5.8 6.4 5.8 10.6a5.8 5.8 0 1 1-11.6 0C6.2 9.9 12 3.5 12 3.5z"/>',
 };
-type Props = { cameras: Camera[]; selected: Camera | null; onSelect: (camera: Camera) => void; loading: boolean; allDisabled: boolean; hasErrors: boolean; language: Language; inactive?: boolean };
-export default function TrafficMap({ cameras, selected, onSelect, loading, allDisabled, hasErrors, language, inactive = false }: Props) {
+type Props = { cameras: Camera[]; segments?: FlowSegment[]; selected: Camera | null; selectedSegmentId?: string | null; onSelect: (camera: Camera) => void; onSelectSegment?: (segment: FlowSegment) => void; loading: boolean; allDisabled: boolean; hasErrors: boolean; language: Language; inactive?: boolean };
+export default function TrafficMap({ cameras, segments, selected, selectedSegmentId, onSelect, onSelectSegment, loading, allDisabled, hasErrors, language, inactive = false }: Props) {
   const copy = messages[language];
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<Leaflet.Map | null>(null);
@@ -26,12 +26,18 @@ export default function TrafficMap({ cameras, selected, onSelect, loading, allDi
   const selectRef = useRef(onSelect);
   const camerasRef = useRef(cameras);
   const copyRef = useRef(copy);
+  const segmentGroup = useRef<Leaflet.LayerGroup | null>(null);
+  const segmentRenderer = useRef<Leaflet.Renderer | null>(null);
+  const segmentPolylines = useRef(new Map<string, Leaflet.Polyline>());
+  const previousSegmentSelection = useRef<string | null>(null);
+  const onSelectSegmentRef = useRef(onSelectSegment);
   const [ready, setReady] = useState(false);
   const [mapError, setMapError] = useState(false);
   const [inView, setInView] = useState(0);
   useEffect(() => { selectRef.current = onSelect; }, [onSelect]);
   useEffect(() => { camerasRef.current = cameras; }, [cameras]);
   useEffect(() => { copyRef.current = copy; }, [copy]);
+  useEffect(() => { onSelectSegmentRef.current = onSelectSegment; }, [onSelectSegment]);
   useEffect(() => {
     let disposed = false;
     let observer: ResizeObserver | undefined;
@@ -55,6 +61,8 @@ export default function TrafficMap({ cameras, selected, onSelect, loading, allDi
           return L.divIcon({ className: 'camera-cluster', html: `<div class="cluster-inner ${types.size > 1 ? 'mixed' : ''}" style="--cluster-color:${layers[kind].color}" aria-label="${copyRef.current.clusterLabel(children.length)}">${children.length}</div>`, iconSize: [40, 40] });
         },
       }).addTo(m);
+      segmentRenderer.current = L.canvas({ padding: 0.5 });
+      segmentGroup.current = L.layerGroup().addTo(m);
       const countVisible = () => setInView(camerasRef.current.filter(c => m.getBounds().contains([c.lat, c.lng])).length);
       m.on('moveend', countVisible);
       observer = new ResizeObserver(() => { m.invalidateSize(); countVisible(); });
@@ -81,10 +89,39 @@ export default function TrafficMap({ cameras, selected, onSelect, loading, allDi
     setInView(cameras.filter(c => m.getBounds().contains([c.lat, c.lng])).length);
   }, [cameras, ready, language]);
   useEffect(() => {
+    const L = library.current, group = segmentGroup.current;
+    if (!ready || !L || !group) return;
+    group.clearLayers();
+    segmentPolylines.current.clear();
+    (segments ?? []).forEach(segment => {
+      const name = language === 'en' ? segment.nameEn || segment.name : segment.name;
+      const polyline = L.polyline(segment.path, {
+        color: speedLevelColors[segment.level],
+        weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round', smoothFactor: 1,
+        renderer: segmentRenderer.current ?? undefined, className: 'segment-polyline',
+      });
+      polyline.bindTooltip(name, { sticky: true, direction: 'top', offset: [0, -10] });
+      polyline.on('click', () => onSelectSegmentRef.current?.(segment));
+      segmentPolylines.current.set(segment.id, polyline);
+      group.addLayer(polyline);
+    });
+  }, [segments, ready, language]);
+  useEffect(() => {
     if (previousSelection.current) markers.current.get(previousSelection.current)?.getElement()?.querySelector('.marker-inner')?.classList.remove('selected');
     if (selected) markers.current.get(selected.id)?.getElement()?.querySelector('.marker-inner')?.classList.add('selected');
     previousSelection.current = selected?.id ?? null;
   }, [selected, cameras]);
+  useEffect(() => {
+    if (previousSegmentSelection.current) {
+      const prev = segmentPolylines.current.get(previousSegmentSelection.current);
+      if (prev) prev.setStyle({ weight: 6, opacity: 0.85 });
+    }
+    if (selectedSegmentId) {
+      const next = segmentPolylines.current.get(selectedSegmentId);
+      if (next) { next.setStyle({ weight: 9, opacity: 1 }); next.bringToFront(); }
+    }
+    previousSegmentSelection.current = selectedSegmentId ?? null;
+  }, [selectedSegmentId, segments]);
   function fit() {
     if (cameras.length && library.current) map.current?.fitBounds(library.current.latLngBounds(cameras.map(c => [c.lat, c.lng])), { padding: [42, 64], maxZoom: 13 });
     else map.current?.setView([22.355, 114.13], 11);
@@ -96,7 +133,7 @@ export default function TrafficMap({ cameras, selected, onSelect, loading, allDi
     <div className="map-tools"><div className="zoom-buttons"><button aria-label={copy.zoomIn} title={copy.zoomIn} onClick={() => map.current?.zoomIn()}><Plus size={19}/></button><button aria-label={copy.zoomOut} title={copy.zoomOut} onClick={() => map.current?.zoomOut()}><Minus size={19}/></button></div><button aria-label={copy.showAll} title={copy.returnToHongKong} onClick={fit}><LocateFixed size={20}/></button></div>
     {mapError && <div className="map-error" role="alert">{copy.mapLoadFailed}</div>}
     {!ready && !mapError && <div className="map-loading"><LoaderCircle className="spin" size={20}/> {copy.mapLoading}</div>}
-    {ready && !loading && cameras.length === 0 && <div className="map-empty"><strong>{allDisabled ? copy.allLayersOff : hasErrors ? copy.cameraLoadFailed : copy.noCameraLocations}</strong>{allDisabled ? copy.turnOnLayer : copy.checkLayers}</div>}
+    {ready && !loading && cameras.length === 0 && !segments?.length && <div className="map-empty"><strong>{allDisabled ? copy.allLayersOff : hasErrors ? copy.cameraLoadFailed : copy.noCameraLocations}</strong>{allDisabled ? copy.turnOnLayer : copy.checkLayers}</div>}
     <div className="map-hint"><MousePointer2 size={14}/><span>{copy.mapHint}</span></div>
   </section>;
 }

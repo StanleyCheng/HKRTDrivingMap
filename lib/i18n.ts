@@ -5,7 +5,6 @@ type AppMessages = {
   english: string;
   chinese: string;
   brandTitle: string;
-  brandSubtitle: string;
   officialData: string;
   sources: string;
   sidebarLabel: string;
@@ -33,6 +32,8 @@ type AppMessages = {
   speedLevels: Record<'free' | 'moderate' | 'slow' | 'unknown', string>;
   noLiveSpeed: string;
   directionLabel: string;
+  showDetectors: string;
+  routeNumberLabel: string;
   speedLayerNote: string;
   parkingSpaces: string;
   parkingNoLive: string;
@@ -103,14 +104,14 @@ type AppMessages = {
 export const messages: Record<Language, AppMessages> = {
   zh: {
     languageControl: '語言選擇', english: '英文', chinese: '中文',
-    brandTitle: '香港實時交通資訊', brandSubtitle: '香港即時交通監察',
-    officialData: '官方開放數據', sources: '資料來源', sidebarLabel: '相機圖層及詳情',
+    brandTitle: '香港即時駕駛地圖',
+    officialData: '官方開放數據', sources: '資料來源', sidebarLabel: '圖層及詳情',
     overviewEyebrow: '香港 · 交通概覽', overviewTitle: '全港相機一覽', publishedLocations: '個已公布位置',
     completeInventory: '完整名冊', mapLayers: '地圖圖層', showingLocations: count => `顯示 ${count} 個`,
     layerSwitch: name => `${name}圖層`, layerUpdateFailed: '更新失敗，現顯示上次成功載入的名冊。', dataLoadFailed: '資料載入失敗。',
     retry: '重試', noOfficialLocations: '官方名冊暫無位置資料。',
     layerNote: '數字代表官方公布的位置數目，並非正在運作的相機數量。偵速機箱名冊不包括政府隧道及管制區。',
-    cameraDetails: '相機詳情', closeCameraDetails: '關閉相機詳情', district: '所屬地區', coordinates: '位置座標',
+    cameraDetails: '詳情', closeCameraDetails: '關閉詳情', district: '所屬地區', coordinates: '位置座標',
     recordUpdated: '記錄更新', officialRemarks: '官方備註',
     layerDetail: {
       redlight: '此圖層提供衝紅燈攝影機系統路口位置。官方並無提供此相機的即時運作狀態或快拍影像。',
@@ -119,8 +120,8 @@ export const messages: Record<Language, AppMessages> = {
     officialSource: '運輸署 · 官方資料來源',
     liveDataTime: '數據時間', speedNow: '平均車速',
     speedLevels: { free: '暢通', moderate: '一般', slow: '緩慢', unknown: '暫無讀數' },
-    noLiveSpeed: '官方暫未提供有效車速讀數', directionLabel: '行車方向',
-    speedLayerNote: '車速為探測器當刻平均讀數，僅反映主要道路局部情況。',
+    noLiveSpeed: '官方暫未提供有效車速讀數', directionLabel: '行車方向', showDetectors: '顯示探測器位置', routeNumberLabel: '路線編號',
+    speedLayerNote: '路段顏色代表官方處理後的實時平均車速（每 2 分鐘更新），另可選擇顯示探測器讀數。',
     parkingSpaces: '私家車空位', parkingNoLive: '暫無實時空位數據',
     heightLimitLabel: '高度限制', metres: height => `${height} 米`, openingStatusLabel: '開放狀態',
     rainfallAmount: '過去一小時雨量', millimetres: mm => `${mm} 毫米`,
@@ -129,7 +130,7 @@ export const messages: Record<Language, AppMessages> = {
     incidentListTitle: count => `全部消息（${count}）`, incidentViewOnMap: '地圖', incidentNoLocation: '未能確定位置',
     incidentEmpty: '現時沒有特別交通消息。',
     emptyDetailTitle: '每段路況，一目了然',
-    emptyDetailBody: '點選地圖上的相機標記，查看位置詳情或最新交通快拍。',
+    emptyDetailBody: '點選地圖上的相機標記或車速路段，查看位置詳情、實時車速或最新交通快拍。',
     loadingOfficialData: '正在讀取官方資料…', partialUpdateFailure: '部分資料更新失敗',
     inventoryFetched: time => `名冊讀取 ${time}`, noData: '未有可用資料', refreshAll: '重新讀取所有官方名冊',
     openControls: '開啟圖層及詳情', closeControls: '關閉圖層及詳情', panelTitle: '圖層及詳情',
@@ -138,7 +139,7 @@ export const messages: Record<Language, AppMessages> = {
       redlight: '運輸署於空間數據共享平台（CSDI）公布的裝設衝紅燈攝影機系統路口。先查詢全部記錄編號及總數，再分批取得每個位置，並核對完整性。位置名冊按官方資料更新。',
       speed: '運輸署於空間數據共享平台（CSDI）公布的偵速機箱位置（不包括政府隧道及管制區）。先查詢全部記錄編號及總數，再分批取得每個位置，並核對完整性。位置名冊按官方資料更新。',
       snapshot: '運輸署交通快拍完整位置名冊（XML）及官方 JPEG 影像。已選快拍每兩分鐘重新讀取，時間取自影像回應的 Last-Modified。',
-      flow: '運輸署「策略性／主要道路的交通數據」：先讀取探測器位置名冊（CSV，含 WGS84 座標），再結合每 1–2 分鐘更新的原始車速數據（XML），取各有效行車線的平均速度。車速只代表探測器當刻讀數。',
+      flow: '運輸署「策略性／主要道路的交通數據」：路段顏色取自官方處理後的實時平均車速（每 2 分鐘更新），按 IRN 路網線段（CSDI 官方 Road Network 2nd Generation CENTERLINE）着色的道路線段；另可按需要顯示探測器當刻平均讀數（每 1–2 分鐘更新）。',
       incident: '運輸署「特別交通消息」（XML），雙語對照。官方消息沒有座標；地圖標示是透過官方地址查詢服務（ALS）按路名推斷的大約位置，未能確定位置的消息只於列表顯示。',
       parking: '資料一線通「停車場空置車位數據」（一鍵通版本）：結合停車場基本資料（位置、高度限制、開放時間）及實時私家車空位數目。',
       rainfall: '香港天文台「過去一小時降雨量」開放數據（JSON，每 15 分鐘更新）。雨量為分區最高讀數，標記置於分區參考點。',
@@ -159,19 +160,19 @@ export const messages: Record<Language, AppMessages> = {
     mapLoadFailed: '互動地圖或底圖暫時未能完整載入。相機位置資料不受影響，請檢查網絡或重新載入。',
     mapLoading: '正在載入地圖', allLayersOff: '所有圖層已關閉', cameraLoadFailed: '暫時未能載入相機位置',
     noCameraLocations: '暫無相機位置資料', turnOnLayer: '開啟相機圖層，即可在地圖查看位置。',
-    checkLayers: '請查看圖層狀態，並按重新整理再試。', mapHint: '點選相機查看詳情 · 點選數字展開相機群組',
+    checkLayers: '請查看圖層狀態，並按重新整理再試。', mapHint: '點選相機或路段查看詳情 · 點選數字展開相機群組',
     clusterLabel: count => `${count} 個相機位置，按下展開`,
   },
   en: {
     languageControl: 'Language', english: 'English', chinese: 'Chinese',
-    brandTitle: 'Hong Kong Real-Time Traffic', brandSubtitle: 'LIVE OFFICIAL CAMERA MAP',
-    officialData: 'Official open data', sources: 'Sources', sidebarLabel: 'Camera layers and details',
+    brandTitle: 'Hong Kong RT Driving Map',
+    officialData: 'Official open data', sources: 'Sources', sidebarLabel: 'Layers and details',
     overviewEyebrow: 'HONG KONG · TRAFFIC OVERVIEW', overviewTitle: 'Camera overview', publishedLocations: 'published locations',
     completeInventory: 'Complete list', mapLayers: 'Map layers', showingLocations: count => `Showing ${count}`,
     layerSwitch: name => `${name} layer`, layerUpdateFailed: 'Update failed. Showing the last successfully loaded list.', dataLoadFailed: 'Data could not be loaded.',
     retry: 'Retry', noOfficialLocations: 'The official list currently has no location data.',
     layerNote: 'Counts are published locations, not cameras confirmed to be operating. The speed-camera list excludes government tunnels and control areas.',
-    cameraDetails: 'Camera details', closeCameraDetails: 'Close camera details', district: 'District', coordinates: 'Coordinates',
+    cameraDetails: 'Details', closeCameraDetails: 'Close details', district: 'District', coordinates: 'Coordinates',
     recordUpdated: 'Record updated', officialRemarks: 'Official remarks',
     layerDetail: {
       redlight: 'This layer shows red-light camera junctions. The official source does not provide live operating status or snapshot images for these cameras.',
@@ -180,8 +181,8 @@ export const messages: Record<Language, AppMessages> = {
     officialSource: 'Transport Department · Official source',
     liveDataTime: 'Data time', speedNow: 'Average speed',
     speedLevels: { free: 'Free flow', moderate: 'Moderate', slow: 'Slow', unknown: 'No reading' },
-    noLiveSpeed: 'No valid speed reading from the official source', directionLabel: 'Direction',
-    speedLayerNote: 'Speeds are current average readings at detectors and reflect only conditions on major roads.',
+    noLiveSpeed: 'No valid speed reading from the official source', directionLabel: 'Direction', showDetectors: 'Show detector locations', routeNumberLabel: 'Route number',
+    speedLayerNote: 'Segment colours show the official processed average speeds (every 2 minutes). Detector point readings can be shown as an option.',
     parkingSpaces: 'Private car spaces', parkingNoLive: 'No live vacancy data',
     heightLimitLabel: 'Height limit', metres: height => `${height} m`, openingStatusLabel: 'Opening status',
     rainfallAmount: 'Rainfall in the past hour', millimetres: mm => `${mm} mm`,
@@ -190,7 +191,7 @@ export const messages: Record<Language, AppMessages> = {
     incidentListTitle: count => `All notices (${count})`, incidentViewOnMap: 'Map', incidentNoLocation: 'No map location',
     incidentEmpty: 'There are no special traffic news notices right now.',
     emptyDetailTitle: 'See every road at a glance',
-    emptyDetailBody: 'Select a camera marker on the map to view its location details or latest traffic snapshot.',
+    emptyDetailBody: 'Select a camera marker or a coloured road segment on the map to view location details, live speeds or the latest traffic snapshot.',
     loadingOfficialData: 'Loading official data…', partialUpdateFailure: 'Some data failed to update',
     inventoryFetched: time => `List fetched ${time}`, noData: 'No data available', refreshAll: 'Reload all official lists',
     openControls: 'Open layers and details', closeControls: 'Close layers and details', panelTitle: 'Layers and details',
@@ -199,7 +200,7 @@ export const messages: Record<Language, AppMessages> = {
       redlight: 'Red-light camera junctions published by the Transport Department on the Common Spatial Data Infrastructure (CSDI). The app queries every record ID and the total count, loads locations in batches, and verifies completeness.',
       speed: 'Speed-camera housing locations published by the Transport Department on CSDI, excluding government tunnels and control areas. The app queries every record ID and the total count, loads locations in batches, and verifies completeness.',
       snapshot: 'The Transport Department’s complete traffic-snapshot location list (XML) and official JPEG images. The selected snapshot refreshes every two minutes; update time comes from the image response’s Last-Modified value.',
-      flow: 'The Transport Department’s Traffic Data of Strategic / Major Roads: the detector location list (CSV, WGS84 coordinates) joined with raw speed readings (XML, every 1–2 minutes), averaged across valid lanes. Speeds are point readings at detectors only.',
+      flow: 'The Transport Department’s Traffic Data of Strategic / Major Roads: segment colours come from the official processed average speeds (every 2 minutes), drawn as road segments aligned to the IRN CENTERLINE from the official Road Network (2nd Generation) CSDI dataset. Optional detector point readings show current averages (every 1–2 minutes).',
       incident: 'The Transport Department’s Special Traffic News (XML), bilingual. Official notices carry no coordinates; map pins are approximate positions inferred from road names via the official Address Lookup Service (ALS). Notices without a confident match appear in the list only.',
       parking: 'The DATA.GOV.HK one-stop car park information and vacancy API: basic car park details (location, height limit, opening hours) merged with real-time private-car vacancy counts.',
       rainfall: 'Hong Kong Observatory “Rainfall in the past hour” open data (JSON, every 15 minutes). Readings are district maxima; markers sit at district reference points, not at measuring stations.',
@@ -220,7 +221,7 @@ export const messages: Record<Language, AppMessages> = {
     mapLoadFailed: 'The interactive map or basemap could not fully load. Camera location data is unaffected; check your connection or reload.',
     mapLoading: 'Loading map', allLayersOff: 'All layers are off', cameraLoadFailed: 'Camera locations could not be loaded',
     noCameraLocations: 'No camera location data is available', turnOnLayer: 'Turn on a camera layer to see its locations on the map.',
-    checkLayers: 'Check the layer status, then refresh and try again.', mapHint: 'Select a camera for details · Select a number to expand a cluster',
+    checkLayers: 'Check the layer status, then refresh and try again.', mapHint: 'Select a camera or road segment for details · Select a number to expand a cluster',
     clusterLabel: count => `${count} camera locations; select to expand`,
   },
 };

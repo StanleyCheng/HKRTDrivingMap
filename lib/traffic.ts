@@ -13,17 +13,32 @@ export type Camera = {
   dataUpdated?: string;
 };
 export type IncidentNotice = { id: string; text: string; textEn: string; time: string; located: boolean; cameraId?: string };
+// A road network segment from the official Road Network (2nd Generation) CENTERLINE,
+// joined with the Transport Department's processed per-segment live speed (irnAvgSpeed-all.xml).
+export type FlowSegment = {
+  id: string;                    // `flow-segment-${routeId}`
+  routeId: number;               // ROUTE_ID in the IRN CENTERLINE
+  name: string;                  // STREET_CNAME (falls back to route/street English name or generic label)
+  nameEn?: string;               // STREET_ENAME
+  routeNum?: number;             // numbered route (1-10) from speed_segments_info.csv, when mapped
+  direction?: number;            // TRAVEL_DIRECTION code from CENTERLINE
+  speedKmh: number | null;       // live average speed; null when no valid reading
+  level: SpeedLevel;
+  path: [number, number][];      // [lat, lng] pairs (WGS84, 5 decimal places)
+};
 export type CameraData = {
   cameras: Camera[]; count: number; expectedCount: number; fetchedAt: string;
   sourceLastModified: string | null; source: string; complete: boolean;
   notices?: IncidentNotice[];
+  segments?: FlowSegment[];      // flow layer only: colored road segments
+  segmentsUpdated?: string;      // flow layer only: timestamp of the segment speed data
 };
 export const kinds: LayerKind[] = ['flow', 'incident', 'redlight', 'speed', 'snapshot', 'parking', 'rainfall'];
 export const layers = {
   redlight: { name: '衝紅燈攝影機', nameEn: 'Red-light cameras', short: '衝紅燈', shortEn: 'Red light', caption: '裝設攝影機系統的路口', captionEn: 'Camera-enforced junctions', color: '#e15d69', dataset: 'td_rcd_1671693287017_1644', source: 'https://data.gov.hk/tc-data/dataset/hk-td-tis_25-junctions-with-rlc' },
   speed: { name: '偵速攝影機', nameEn: 'Speed cameras', short: '偵速', shortEn: 'Speed', caption: '偵速攝影機機箱位置', captionEn: 'Speed camera housing locations', color: '#d49b25', dataset: 'td_rcd_1671693428549_89372', source: 'https://data.gov.hk/tc-data/dataset/hk-td-tis_26-locations-of-sec' },
   snapshot: { name: '交通快拍', nameEn: 'Traffic snapshots', short: '交通快拍', shortEn: 'Snapshots', caption: '運輸署最新道路影像', captionEn: 'Latest Transport Department images', color: '#318dbe', dataset: '', source: 'https://data.gov.hk/tc-data/dataset/hk-td-tis_2-traffic-snapshot-images' },
-  flow: { name: '實時車速', nameEn: 'Live road speed', short: '車速', shortEn: 'Flow', caption: '主要道路探測器每 1–2 分鐘更新', captionEn: 'Major-road detectors, every 1–2 min', color: '#1f9d63', dataset: '', source: 'https://data.gov.hk/en-data/dataset/hk-td-sm_4-traffic-data-strategic-major-roads' },
+  flow: { name: '實時車速', nameEn: 'Live road speed', short: '車速', shortEn: 'Flow', caption: '主要道路路段車速每 2 分鐘更新', captionEn: 'Live speeds on major-road segments', color: '#1f9d63', dataset: '', source: 'https://data.gov.hk/en-data/dataset/hk-td-sm_4-traffic-data-strategic-major-roads' },
   incident: { name: '特別交通消息', nameEn: 'Traffic incidents', short: '事故', shortEn: 'Incidents', caption: '事故、封路及緊急工程', captionEn: 'Accidents, closures and emergency works', color: '#e8842c', dataset: '', source: 'https://data.gov.hk/en-data/dataset/hk-td-tis_19-special-traffic-news-v2' },
   parking: { name: '停車場空位', nameEn: 'Parking vacancy', short: '泊車', shortEn: 'Parking', caption: '實時泊車空位及高度限制', captionEn: 'Real-time spaces and height limits', color: '#7b5fc9', dataset: '', source: 'https://data.gov.hk/en-data/dataset/hk-dpo-datagovhk1-carpark-info-vacancy' },
   rainfall: { name: '降雨量', nameEn: 'Rainfall', short: '雨量', shortEn: 'Rain', caption: '天文台分區每小時雨量', captionEn: 'HKO district hourly rainfall', color: '#5a8fd6', dataset: '', source: 'https://data.gov.hk/en-data/dataset/hk-hko-rss-rainfall-in-the-past-hour' },
