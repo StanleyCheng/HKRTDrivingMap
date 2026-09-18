@@ -52,6 +52,7 @@ type AppMessages = {
   emptyDetailTitle: string;
   emptyDetailBody: string;
   loadingOfficialData: string;
+  loadingLiveSpeeds: string;
   partialUpdateFailure: string;
   inventoryFetched: (time: string) => string;
   noData: string;
@@ -131,7 +132,7 @@ export const messages: Record<Language, AppMessages> = {
     incidentEmpty: '現時沒有特別交通消息。',
     emptyDetailTitle: '每段路況，一目了然',
     emptyDetailBody: '點選地圖上的相機標記或車速路段，查看位置詳情、實時車速或最新交通快拍。',
-    loadingOfficialData: '正在讀取官方資料…', partialUpdateFailure: '部分資料更新失敗',
+    loadingOfficialData: '正在讀取官方資料…', loadingLiveSpeeds: '正在載入實時車速路段', partialUpdateFailure: '部分資料更新失敗',
     inventoryFetched: time => `名冊讀取 ${time}`, noData: '未有可用資料', refreshAll: '重新讀取所有官方名冊',
     openControls: '開啟圖層及詳情', closeControls: '關閉圖層及詳情', panelTitle: '圖層及詳情',
     sourceDialogTitle: '資料來源與更新', closeSources: '關閉資料來源',
@@ -192,7 +193,7 @@ export const messages: Record<Language, AppMessages> = {
     incidentEmpty: 'There are no special traffic news notices right now.',
     emptyDetailTitle: 'See every road at a glance',
     emptyDetailBody: 'Select a camera marker or a coloured road segment on the map to view location details, live speeds or the latest traffic snapshot.',
-    loadingOfficialData: 'Loading official data…', partialUpdateFailure: 'Some data failed to update',
+    loadingOfficialData: 'Loading official data…', loadingLiveSpeeds: 'Loading live road speeds', partialUpdateFailure: 'Some data failed to update',
     inventoryFetched: time => `List fetched ${time}`, noData: 'No data available', refreshAll: 'Reload all official lists',
     openControls: 'Open layers and details', closeControls: 'Close layers and details', panelTitle: 'Layers and details',
     sourceDialogTitle: 'Sources and updates', closeSources: 'Close sources',

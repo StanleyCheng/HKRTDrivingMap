@@ -293,6 +293,7 @@ export default function TrafficMonitor() {
     <header className="topbar" inert={mobilePanelOpen || undefined}>
       <div className="brand"><div className="brand-icon"><Image src="/app-icon-192.png" alt="" width={43} height={43} priority/></div><div><h1>{copy.brandTitle}</h1></div></div>
       <div className="header-meta">
+        {states.flow.loading && !states.flow.data && <span className="live-loading-dot" role="status" title={copy.loadingLiveSpeeds} aria-label={copy.loadingLiveSpeeds}/>}
         <span className="official-tag"><ShieldCheck size={15}/>{copy.officialData}</span>
         <div className="language-toggle" role="group" aria-label={copy.languageControl}>
           <button type="button" aria-pressed={language === 'en'} title={copy.english} onClick={() => setStoredLanguage('en')}>ENG</button>
