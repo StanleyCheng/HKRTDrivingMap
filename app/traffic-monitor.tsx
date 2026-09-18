@@ -145,7 +145,7 @@ export default function TrafficMonitor() {
   const language = useSyncExternalStore(subscribeLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
   const copy = messages[language];
   const numberLocale = language === 'en' ? 'en-HK' : 'zh-HK';
-  const [enabled, setEnabled] = useState<Record<LayerKind, boolean>>({ flow: true, incident: true, redlight: true, speed: true, snapshot: true, parking: true, rainfall: true });
+  const [enabled, setEnabled] = useState<Record<LayerKind, boolean>>({ flow: true, incident: true, redlight: false, speed: false, snapshot: false, parking: false, rainfall: false });
   const [states, setStates] = useState<Record<LayerKind, LayerState>>({
     flow: { loading: true, error: false },
     incident: { loading: true, error: false },
