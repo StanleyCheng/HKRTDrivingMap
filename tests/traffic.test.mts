@@ -1,0 +1,67 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  isLiveTrafficDataFresh,
+  liveTrafficMaxAgeMs,
+  officialHongKongTimestamp,
+  speedLevel,
+} from '../lib/traffic.ts';
+import { parseCsv, parseSegmentRouteNumbers, pickLatestPeriod, popupFields } from '../lib/traffic-parsing.ts';
+
+test('speedLevel classifies urban-road traffic bands', () => {
+  assert.equal(speedLevel(0), 'slow');
+  assert.equal(speedLevel(15), 'slow');
+  assert.equal(speedLevel(15.1), 'moderate');
+  assert.equal(speedLevel(30), 'moderate');
+  assert.equal(speedLevel(30.1), 'free');
+});
+
+test('speedLevel classifies major-road traffic bands from the speed limit', () => {
+  assert.equal(speedLevel(25, 70), 'slow');
+  assert.equal(speedLevel(25.1, 70), 'moderate');
+  assert.equal(speedLevel(50, 70), 'moderate');
+  assert.equal(speedLevel(50.1, 70), 'free');
+});
+
+test('speedLevel never treats missing or malformed readings as free flow', () => {
+  assert.equal(speedLevel(null), 'unknown');
+  assert.equal(speedLevel(Number.NaN), 'unknown');
+  assert.equal(speedLevel(Number.POSITIVE_INFINITY), 'unknown');
+  assert.equal(speedLevel(-1), 'unknown');
+});
+
+test('officialHongKongTimestamp accepts only real local date-times', () => {
+  assert.equal(officialHongKongTimestamp('2026-09-20', '10:51:00'), '2026-09-20T10:51:00+08:00');
+  assert.equal(officialHongKongTimestamp('2026-02-29', '10:51:00'), undefined);
+  assert.equal(officialHongKongTimestamp('2026-09-20', '24:00:00'), undefined);
+  assert.equal(officialHongKongTimestamp('20/09/2026', '10:51:00'), undefined);
+  assert.equal(officialHongKongTimestamp(undefined, '10:51:00'), undefined);
+});
+
+test('isLiveTrafficDataFresh rejects expired and implausibly future readings', () => {
+  const now = Date.parse('2026-09-20T11:00:00+08:00');
+  assert.equal(isLiveTrafficDataFresh('2026-09-20T11:00:00+08:00', now), true);
+  assert.equal(isLiveTrafficDataFresh(new Date(now - liveTrafficMaxAgeMs).toISOString(), now), true);
+  assert.equal(isLiveTrafficDataFresh(new Date(now - liveTrafficMaxAgeMs - 1).toISOString(), now), false);
+  assert.equal(isLiveTrafficDataFresh(new Date(now + 5 * 60 * 1000).toISOString(), now), true);
+  assert.equal(isLiveTrafficDataFresh(new Date(now + 5 * 60 * 1000 + 1).toISOString(), now), false);
+  assert.equal(isLiveTrafficDataFresh('not-a-date', now), false);
+  assert.equal(isLiveTrafficDataFresh(undefined, now), false);
+});
+
+test('shared traffic parsers handle quoted CSV, route numbers and popup markup', () => {
+  assert.deepEqual(parseCsv('id,name\r\n1,"Road, East"\r\n2,"A ""quoted"" road"'), [
+    ['id', 'name'],
+    ['1', 'Road, East'],
+    ['2', 'A "quoted" road'],
+  ]);
+  assert.deepEqual([...parseSegmentRouteNumbers('irn_id,ucase(route)\n375,1\n1060,"ABERDEEN PRAYA ROAD"')], [[375, 1]]);
+  assert.deepEqual(popupFields('<tr><th> SITE </th><td>Road &amp; Tunnel</td></tr>'), { SITE: 'Road & Tunnel' });
+});
+
+test('pickLatestPeriod is stable for single, missing and unordered periods', () => {
+  assert.equal(pickLatestPeriod(undefined), undefined);
+  assert.deepEqual(pickLatestPeriod({ period_to: '10:00:00' }), { period_to: '10:00:00' });
+  assert.deepEqual(pickLatestPeriod([{ period_to: '10:02:00' }, { period_to: '10:01:00' }]), { period_to: '10:02:00' });
+});

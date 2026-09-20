@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
-import { Camera, CameraData, FlowSegment, IncidentNotice, LayerKind, SpeedLevel, featureService, snapshotInventory, snapshotInventoryEn, speedLevelColors } from './traffic';
+import { Camera, CameraData, FlowSegment, IncidentNotice, LayerKind, featureService, isLiveTrafficDataFresh, officialHongKongTimestamp, snapshotInventory, snapshotInventoryEn, speedLevel, speedLevelColors } from './traffic';
+import { inHongKong, isUnnamedRoad, parseCsv, parseSegmentRouteNumbers, pickLatestPeriod, popupFields, roundCoordinate } from './traffic-parsing';
 
 const parser = new XMLParser({ ignoreAttributes: true, parseTagValue: false, processEntities: true });
 const cached = new Map<LayerKind, { expires: number; data: CameraData }>();
@@ -48,12 +49,6 @@ async function json(url: string) {
   const body = await r.json() as { error?: { message?: string; code: number }; objectIds?: number[]; count: number; exceededTransferLimit?: boolean; features?: { attributes: { OBJECTID: number; PopupInfo: string }; geometry?: { x: number; y: number } }[] };
   if (body.error) throw new Error(`官方 API 錯誤：${body.error.message ?? body.error.code}`);
   return body;
-}
-function textOnly(value: string) {
-  return value.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").trim();
-}
-export function popupFields(html: string): Record<string, string> {
-  return Object.fromEntries([...html.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>\s*<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(m => [textOnly(m[1]), textOnly(m[2])]));
 }
 function validate(cameras: Camera[], expected: number) {
   if (cameras.length !== expected || new Set(cameras.map(c => c.id)).size !== expected) throw new Error(`官方資料未能完整載入（收到 ${cameras.length} 筆，預期 ${expected} 筆），請重試。`);
@@ -126,130 +121,93 @@ async function loadSnapshots(): Promise<CameraData> {
   validate(cameras, rows.length);
   return { cameras, count: cameras.length, expectedCount: rows.length, complete: true, fetchedAt: new Date().toISOString(), sourceLastModified: response.headers.get('Last-Modified'), source: snapshotInventory };
 }
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let field = '', row: string[] = [], quoted = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quoted) {
-      if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false; }
-      else field += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ',') { row.push(field); field = ''; }
-    else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && text[i + 1] === '\n') i++;
-      row.push(field); field = '';
-      if (row.some(cell => cell.trim() !== '')) rows.push(row);
-      row = [];
-    } else field += ch;
-  }
-  row.push(field);
-  if (row.some(cell => cell.trim() !== '')) rows.push(row);
-  return rows;
-}
-function inHongKong(lat: number, lng: number) {
-  return Number.isFinite(lat) && Number.isFinite(lng) && lat >= 22 && lat <= 23 && lng >= 113 && lng <= 115;
-}
-
 const detectorInfoUrl = 'https://static.data.gov.hk/td/traffic-data-strategic-major-roads/info/traffic_speed_volume_occ_info.csv';
 const rawSpeedUrl = 'https://resource.data.one.gov.hk/td/traffic-detectors/rawSpeedVol-all.xml';
 const segmentInfoUrl = 'https://static.data.gov.hk/td/traffic-data-strategic-major-roads/info/speed_segments_info.csv';
 const segmentSpeedUrl = 'https://resource.data.one.gov.hk/td/traffic-detectors/irnAvgSpeed-all.xml';
 const segmentCenterlineUrl = 'https://portal.csdi.gov.hk/server/rest/services/common/td_rcd_1638949160594_2844/FeatureServer/10/query';
+const segmentSpeedLimitUrl = 'https://portal.csdi.gov.hk/server/rest/services/common/td_rcd_1638949160594_2844/FeatureServer/2/query';
 const speedNewsUrl = 'https://resource.data.one.gov.hk/td/en/specialtrafficnews.xml';
 const alsLookupUrl = 'https://www.als.gov.hk/lookup';
 const parkingBaseUrl = 'https://api.data.gov.hk/v1/carpark-info-vacancy';
 const rainfallUrl = (lang: string) => `https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=${lang}`;
 
-function speedLevel(speed: number | null): SpeedLevel {
-  if (speed === null) return 'unknown';
-  if (speed < 25) return 'slow';
-  if (speed < 45) return 'moderate';
-  return 'free';
-}
-
-function pickLatestPeriod<T extends { period_from?: string; period_to?: string }>(period: T | T[] | undefined): T | undefined {
-  const list = Array.isArray(period) ? period : period ? [period] : [];
-  if (!list.length) return undefined;
-  return list.reduce((latest, current) => {
-    if (!current.period_to) return latest;
-    return !latest.period_to || current.period_to > latest.period_to ? current : latest;
-  }, list[0]);
-}
-
-function round5(value: number): number {
-  return Math.round(value * 100000) / 100000;
-}
-
-function isUnnamedName(name: string | undefined): boolean {
-  if (!name) return true;
-  const trimmed = name.trim();
-  return trimmed === '' || trimmed === '-99' || trimmed === '－９９';
-}
-
-function parseSegmentInfo(text: string): Map<number, number> {
-  const rows = parseCsv(text.replace(/^﻿/, ''));
-  const header = rows.shift()?.map(cell => cell.trim().toLowerCase()) ?? [];
-  const idIndex = header.indexOf('irn_id');
-  const routeIndex = header.indexOf('ucase(route)');
-  const map = new Map<number, number>();
-  if (idIndex < 0 || routeIndex < 0) return map;
-  for (const row of rows) {
-    const routeNum = Number(row[routeIndex]);
-    if (Number.isFinite(routeNum) && routeNum > 0) map.set(Number(row[idIndex]), routeNum);
-  }
-  return map;
-}
-
-type SegmentSpeed = { speed: number; valid: boolean };
-async function loadSegmentSpeeds(): Promise<{ byId: Map<number, SegmentSpeed>; updated: string | undefined }> {
+async function loadSegmentSpeeds(): Promise<{ byId: Map<number, number | null>; updated: string | undefined }> {
   const response = await officialFetch(segmentSpeedUrl, { allowedRedirectHosts: ['resource.data.one.gov.hk'] });
   const raw = parser.parse(await response.text())?.['segment_speed_list'];
   const segments = raw?.segments?.segment;
   const rows = (Array.isArray(segments) ? segments : segments ? [segments] : []) as { segment_id: string; speed: string; valid: string }[];
-  const byId = new Map<number, SegmentSpeed>();
+  const updated = officialHongKongTimestamp(raw?.date, raw?.time);
+  const fresh = isLiveTrafficDataFresh(updated);
+  const byId = new Map<number, number | null>();
   for (const row of rows) {
-    byId.set(Number(row.segment_id), { speed: Number(row.speed), valid: String(row.valid).toUpperCase() === 'Y' });
+    const routeId = Number(row.segment_id);
+    if (!Number.isInteger(routeId) || routeId <= 0) continue;
+    if (byId.has(routeId)) throw new Error(`官方路段車速資料包含重複編號 ${routeId}。`);
+    const speed = Number(row.speed);
+    const valid = fresh && String(row.valid).toUpperCase() === 'Y' && Number.isFinite(speed) && speed >= 0;
+    byId.set(routeId, valid ? speed : null);
   }
-  const updated = raw?.date && raw?.time ? `${raw.date}T${raw.time}+08:00` : undefined;
+  if (!byId.size) throw new Error('官方路段車速數據格式不符或未提供資料。');
   return { byId, updated };
 }
 
-type SegmentGeometry = { name: string; nameEn?: string; routeNum?: number; direction?: number; path: [number, number][] };
+type SegmentGeometry = { name: string; nameEn?: string; routeNum?: number; direction?: number; speedLimitKmh: number; path: [number, number][] };
 let segmentGeometryCache: { expires: number; map: Map<number, SegmentGeometry> } | null = null;
 let segmentGeometryRefresh: Promise<Map<number, SegmentGeometry>> | null = null;
 const segmentGeometryTtl = 24 * 60 * 60 * 1000;
 
 async function fetchSegmentGeometry(routeIds: Iterable<number>): Promise<Map<number, SegmentGeometry>> {
   const infoText = await (await officialFetch(segmentInfoUrl, { allowedRedirectHosts: ['static.data.gov.hk'] })).text();
-  const routeNumMap = parseSegmentInfo(infoText);
-  const ids = [...new Set([...routeIds, ...routeNumMap.keys()])].sort((a, b) => a - b);
+  const routeNumMap = parseSegmentRouteNumbers(infoText);
+  const ids = [...new Set(routeIds)].filter(id => Number.isInteger(id) && id > 0).sort((a, b) => a - b);
   const geometry = new Map<number, SegmentGeometry>();
   for (let offset = 0; offset < ids.length; offset += 150) {
     const batch = ids.slice(offset, offset + 150);
-    const result = await json(`${segmentCenterlineUrl}?where=${encodeURIComponent(`ROUTE_ID IN (${batch.join(',')})`)}&outFields=ROUTE_ID,STREET_ENAME,STREET_CNAME,TRAVEL_DIRECTION&returnGeometry=true&outSR=4326&f=json`) as {
+    const where = encodeURIComponent(`ROUTE_ID IN (${batch.join(',')})`);
+    const speedLimitWhere = encodeURIComponent(`ROAD_ROUTE_ID IN (${batch.join(',')})`);
+    const [result, speedLimitResult] = await Promise.all([
+      json(`${segmentCenterlineUrl}?where=${where}&outFields=ROUTE_ID,STREET_ENAME,STREET_CNAME,TRAVEL_DIRECTION&returnGeometry=true&outSR=4326&f=json`),
+      json(`${segmentSpeedLimitUrl}?where=${speedLimitWhere}&outFields=ROAD_ROUTE_ID,SPEED_LIMIT&returnGeometry=false&f=json`),
+    ]) as [{
       exceededTransferLimit?: boolean;
-      features?: { attributes: { ROUTE_ID: number; STREET_ENAME?: string; STREET_CNAME?: string; TRAVEL_DIRECTION?: number }; geometry: { paths: number[][][] } }[];
-    };
-    if (result.exceededTransferLimit) throw new Error('官方道路網絡 API 截斷了位置資料，請稍後重試。');
+      features?: { attributes: { ROUTE_ID: number; STREET_ENAME?: string; STREET_CNAME?: string; TRAVEL_DIRECTION?: number }; geometry?: { paths?: number[][][] } }[];
+    }, {
+      exceededTransferLimit?: boolean;
+      features?: { attributes: { ROAD_ROUTE_ID: number; SPEED_LIMIT?: string } }[];
+    }];
+    if (result.exceededTransferLimit || speedLimitResult.exceededTransferLimit) throw new Error('官方道路網絡 API 截斷了位置資料，請稍後重試。');
+    const speedLimits = new Map<number, number>();
+    for (const feature of speedLimitResult.features ?? []) {
+      const routeId = Number(feature.attributes.ROAD_ROUTE_ID);
+      const speedLimit = Number.parseInt(feature.attributes.SPEED_LIMIT ?? '', 10);
+      if (Number.isInteger(routeId) && Number.isFinite(speedLimit)) {
+        // A CENTERLINE route can contain several signed speed-limit sections.
+        // Treat it as a >=70 km/h major road only when the whole route qualifies.
+        speedLimits.set(routeId, Math.min(speedLimits.get(routeId) ?? Number.POSITIVE_INFINITY, speedLimit));
+      }
+    }
     for (const feature of result.features ?? []) {
       const a = feature.attributes;
       const routeId = Number(a.ROUTE_ID);
       if (!Number.isFinite(routeId)) continue;
-      const paths = feature.geometry.paths;
+      const paths = feature.geometry?.paths;
+      if (!Array.isArray(paths)) continue;
       const best = paths.reduce((longest, path) => path.length > longest.length ? path : longest, paths[0] ?? []);
-      if (!best.length) continue;
-      const path: [number, number][] = best.map(pair => [round5(pair[1]), round5(pair[0])]);
+      const path: [number, number][] = best
+        .filter(pair => pair.length >= 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1]))
+        .map(pair => [roundCoordinate(pair[1]), roundCoordinate(pair[0])]);
+      if (path.length < 2) continue;
       const routeNum = routeNumMap.get(routeId);
       const rawEn = a.STREET_ENAME?.trim();
       const rawZh = a.STREET_CNAME?.trim();
-      const hasEn = !isUnnamedName(rawEn);
-      const hasZh = !isUnnamedName(rawZh);
+      const hasEn = !isUnnamedRoad(rawEn);
+      const hasZh = !isUnnamedRoad(rawZh);
       const name = hasZh ? rawZh! : (hasEn ? rawEn! : (routeNum ? `${routeNum}號幹線` : '路段'));
       const nameEn = hasEn ? rawEn! : (hasZh ? rawZh! : (routeNum ? `Route ${routeNum}` : 'Road segment'));
       const existing = geometry.get(routeId);
       if (!existing || existing.path.length < path.length) {
-        geometry.set(routeId, { name, nameEn, routeNum, direction: a.TRAVEL_DIRECTION, path });
+        geometry.set(routeId, { name, nameEn, routeNum, direction: a.TRAVEL_DIRECTION, speedLimitKmh: speedLimits.get(routeId) ?? 50, path });
       }
     }
   }
@@ -277,6 +235,8 @@ async function loadFlow(): Promise<CameraData> {
   const column = (name: string) => header.indexOf(name.toLowerCase());
   const raw = parser.parse(await rawResponse.text())?.['raw_speed_volume_list'];
   const latest = pickLatestPeriod(raw?.periods?.period);
+  const detectorUpdated = officialHongKongTimestamp(raw?.date, latest?.period_to);
+  const detectorDataFresh = isLiveTrafficDataFresh(detectorUpdated);
   const detectors = latest?.detectors?.detector;
   if (!detectors) throw new Error('官方車速數據格式不符或未提供資料。');
   const detectorRows = (Array.isArray(detectors) ? detectors : [detectors]) as { detector_id: string; lanes?: { lane?: unknown } }[];
@@ -284,7 +244,9 @@ async function loadFlow(): Promise<CameraData> {
   for (const detector of detectorRows) {
     const laneRaw = (detector.lanes as { lane?: unknown } | undefined)?.lane;
     const laneRows = (Array.isArray(laneRaw) ? laneRaw : laneRaw ? [laneRaw] : []) as { speed?: string; valid?: string }[];
-    const validSpeeds = laneRows.filter(lane => String(lane.valid).toUpperCase() === 'Y').map(lane => Number(lane.speed)).filter(Number.isFinite);
+    const validSpeeds = detectorDataFresh
+      ? laneRows.filter(lane => String(lane.valid).toUpperCase() === 'Y').map(lane => Number(lane.speed)).filter(speed => Number.isFinite(speed) && speed >= 0)
+      : [];
     speedByDetector.set(String(detector.detector_id), validSpeeds.length ? validSpeeds.reduce((sum, value) => sum + value, 0) / validSpeeds.length : null);
   }
   const cameras: Camera[] = [];
@@ -303,33 +265,39 @@ async function loadFlow(): Promise<CameraData> {
       remarks: row[column('direction')]?.trim() || undefined,
       rotation: Number(row[column('rotation')]) || undefined,
       speedKmh: speed === null ? null : Math.round(speed), level, color: speedLevelColors[level],
-      dataUpdated: latest?.period_to ? `${raw.date}T${latest.period_to}+08:00` : undefined,
+      dataUpdated: detectorUpdated,
     });
   }
   if (!cameras.length) throw new Error('官方探測器位置名冊暫無可用位置。');
   const invalid = cameras.filter(c => !c.name || !inHongKong(c.lat, c.lng));
   if (invalid.length) throw new Error(`官方車速資料有 ${invalid.length} 筆座標不完整。`);
 
-  const segmentResult = await (async (): Promise<{ segments: FlowSegment[]; segmentsUpdated?: string } | undefined> => {
-    try {
-      const { byId, updated } = await loadSegmentSpeeds();
-      const geometries = await getSegmentGeometry([...byId.keys()]);
-      const segments: FlowSegment[] = [];
-      for (const [routeId, info] of byId) {
-        const geom = geometries.get(routeId);
-        if (!geom) continue;
-        const speedKmh = info.valid ? Math.round(info.speed) : null;
-        const level = info.valid ? speedLevel(info.speed) : 'unknown';
-        segments.push({ id: `flow-segment-${routeId}`, routeId, name: geom.name, nameEn: geom.nameEn, routeNum: geom.routeNum, direction: geom.direction, speedKmh, level, path: geom.path });
-      }
-      return { segments, segmentsUpdated: updated };
-    } catch (error) {
-      console.error('Failed to load flow segment data:', error);
-      return undefined;
-    }
-  })();
+  const { byId, updated } = await loadSegmentSpeeds();
+  const geometries = await getSegmentGeometry(byId.keys());
+  const segments: FlowSegment[] = [];
+  for (const [routeId, speed] of byId) {
+    const geom = geometries.get(routeId);
+    if (!geom) continue;
+    const speedKmh = speed === null ? null : Math.round(speed);
+    const level = speedLevel(speed, geom.speedLimitKmh);
+    segments.push({ id: `flow-segment-${routeId}`, routeId, name: geom.name, nameEn: geom.nameEn, routeNum: geom.routeNum, direction: geom.direction, speedKmh, speedLimitKmh: geom.speedLimitKmh, level, path: geom.path });
+  }
+  if (!segments.length) throw new Error('官方路段車速暫時無法配對道路網絡。');
+  const segmentsComplete = segments.length === byId.size;
 
-  return { cameras, count: cameras.length, expectedCount: rows.length, complete: true, fetchedAt: new Date().toISOString(), sourceLastModified: infoResponse.headers.get('Last-Modified'), source: rawSpeedUrl, ...segmentResult };
+  return {
+    cameras,
+    count: cameras.length,
+    expectedCount: rows.length,
+    complete: cameras.length === rows.length && segmentsComplete,
+    fetchedAt: new Date().toISOString(),
+    sourceLastModified: infoResponse.headers.get('Last-Modified'),
+    source: rawSpeedUrl,
+    segments,
+    segmentsUpdated: updated,
+    segmentsExpectedCount: byId.size,
+    segmentsComplete,
+  };
 }
 
 const geocodeCache = new Map<string, { lat: number; lng: number } | null>();
@@ -504,7 +472,7 @@ async function loadRainfall(): Promise<CameraData> {
   return { cameras, count: cameras.length, expectedCount: rows.length, complete: true, fetchedAt: new Date().toISOString(), sourceLastModified: null, source: rainfallUrl('en') };
 }
 
-const cacheTtl: Record<LayerKind, number> = { redlight: 300000, speed: 300000, snapshot: 300000, flow: 120000, incident: 120000, parking: 180000, rainfall: 600000 };
+const cacheTtl: Record<LayerKind, number> = { redlight: 300000, speed: 300000, snapshot: 300000, flow: 90000, incident: 120000, parking: 180000, rainfall: 600000 };
 
 export async function getCameraData(kind: LayerKind): Promise<CameraData> {
   const entry = cached.get(kind);

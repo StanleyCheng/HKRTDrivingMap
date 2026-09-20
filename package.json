@@ -12,6 +12,10 @@
     "build:static": "node scripts/build-static.mjs",
     "start": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js dev --config dist/server/wrangler.json --local --persist-to .wrangler/state --ip 127.0.0.1 --inspector-port 0",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "typecheck": "tsc --noEmit --pretty false --incremental false",
+    "test": "node --experimental-strip-types --test tests/*.test.mts",
+    "verify": "npm run lint && npm run typecheck && npm test",
+    "verify:live": "node --experimental-strip-types scripts/verify-live.mjs http://localhost:5173",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

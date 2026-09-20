@@ -7,6 +7,7 @@ export type Camera = {
   sourceUpdated?: string; imageUrl?: string;
   color?: string; rotation?: number;
   level?: SpeedLevel; speedKmh?: number | null;
+  speedLimitKmh?: number;
   vacancy?: number | null; heightLimit?: number; openingStatus?: string;
   rainfallMm?: number;
   text?: string; textEn?: string;
@@ -23,6 +24,7 @@ export type FlowSegment = {
   routeNum?: number;             // numbered route (1-10) from speed_segments_info.csv, when mapped
   direction?: number;            // TRAVEL_DIRECTION code from CENTERLINE
   speedKmh: number | null;       // live average speed; null when no valid reading
+  speedLimitKmh: number;         // official road speed limit, or Hong Kong's 50 km/h default
   level: SpeedLevel;
   path: [number, number][];      // [lat, lng] pairs (WGS84, 5 decimal places)
 };
@@ -32,6 +34,8 @@ export type CameraData = {
   notices?: IncidentNotice[];
   segments?: FlowSegment[];      // flow layer only: colored road segments
   segmentsUpdated?: string;      // flow layer only: timestamp of the segment speed data
+  segmentsExpectedCount?: number;
+  segmentsComplete?: boolean;
 };
 export const kinds: LayerKind[] = ['flow', 'incident', 'redlight', 'speed', 'snapshot', 'parking', 'rainfall'];
 export const layers = {
@@ -44,6 +48,38 @@ export const layers = {
   rainfall: { name: '降雨量', nameEn: 'Rainfall', short: '雨量', shortEn: 'Rain', caption: '天文台分區每小時雨量', captionEn: 'HKO district hourly rainfall', color: '#5a8fd6', dataset: '', source: 'https://data.gov.hk/en-data/dataset/hk-hko-rss-rainfall-in-the-past-hour' },
 };
 export const speedLevelColors: Record<SpeedLevel, string> = { free: '#1f9d63', moderate: '#d49b25', slow: '#e15d69', unknown: '#8a9aa5' };
+const trafficSpeedThresholds = {
+  urban: { slowAtOrBelow: 15, freeAbove: 30 },
+  major: { slowAtOrBelow: 25, freeAbove: 50 },
+} as const;
+export const liveTrafficMaxAgeMs = 10 * 60 * 1000;
+const liveTrafficFutureToleranceMs = 5 * 60 * 1000;
+
+export function speedLevel(speedKmh: number | null, speedLimitKmh = 50): SpeedLevel {
+  if (speedKmh === null || !Number.isFinite(speedKmh) || speedKmh < 0) return 'unknown';
+  const thresholds = speedLimitKmh >= 70 ? trafficSpeedThresholds.major : trafficSpeedThresholds.urban;
+  if (speedKmh <= thresholds.slowAtOrBelow) return 'slow';
+  if (speedKmh <= thresholds.freeAbove) return 'moderate';
+  return 'free';
+}
+
+export function officialHongKongTimestamp(date: unknown, time: unknown): string | undefined {
+  if (typeof date !== 'string' || typeof time !== 'string') return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}:\d{2}$/.test(time)) return undefined;
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute, second] = time.split(':').map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth || hour > 23 || minute > 59 || second > 59) return undefined;
+  return `${date}T${time}+08:00`;
+}
+
+export function isLiveTrafficDataFresh(timestamp: string | undefined, now = Date.now()): boolean {
+  if (!timestamp) return false;
+  const updatedAt = Date.parse(timestamp);
+  if (!Number.isFinite(updatedAt)) return false;
+  const age = now - updatedAt;
+  return age >= -liveTrafficFutureToleranceMs && age <= liveTrafficMaxAgeMs;
+}
 export function layerText(kind: LayerKind, language: Language) {
   const layer = layers[kind];
   return language === 'en'
