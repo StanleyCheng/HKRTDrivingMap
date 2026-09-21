@@ -31,11 +31,14 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 }
 
 try {
-  if (!fs.existsSync(apiDir)) throw new Error("app/api not found; is a previous build still running?");
-  fs.cpSync(apiDir, backupDir, { recursive: true });
-  fs.rmSync(apiDir, { recursive: true });
-  apiMovedAside = true;
-  console.log("[build-static] moved app/api aside; running next build (STATIC_EXPORT=1)");
+  if (fs.existsSync(apiDir)) {
+    fs.cpSync(apiDir, backupDir, { recursive: true });
+    fs.rmSync(apiDir, { recursive: true });
+    apiMovedAside = true;
+    console.log("[build-static] moved app/api aside; running next build (STATIC_EXPORT=1)");
+  } else {
+    console.log("[build-static] no app/api directory; running next build (STATIC_EXPORT=1)");
+  }
 
   const result = spawnSync(process.execPath, [nextBin, "build"], {
     cwd: root,
