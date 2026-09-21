@@ -6,11 +6,11 @@ const nextConfig: NextConfig = {
   agentRules: false,
   ...(staticExport && {
     output: "export",
-    basePath: "/HKRTDrivingMap",
-    assetPrefix: "/HKRTDrivingMap/",
+    basePath: "/HKRTTrafficInfo",
+    assetPrefix: "/HKRTTrafficInfo/",
     images: { unoptimized: true },
     trailingSlash: true,
-    env: { NEXT_PUBLIC_BASE_PATH: "/HKRTDrivingMap" },
+    env: { NEXT_PUBLIC_BASE_PATH: "/HKRTTrafficInfo" },
   }),
 };
 

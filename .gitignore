@@ -48,3 +48,4 @@ next-env.d.ts
 
 # Static-export backup of app/api if build-static is interrupted
 /.api-backup-*/
+.vite/

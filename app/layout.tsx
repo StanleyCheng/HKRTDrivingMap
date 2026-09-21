@@ -3,10 +3,10 @@ import "./globals.css";
 
 // Static export is served under a sub-path; Next does not prefix basePath onto
 // absolute metadata asset URLs, so prefix them explicitly for that build.
-const assetBase = process.env.STATIC_EXPORT === "1" ? "/HKRTDrivingMap" : "";
+const assetBase = process.env.STATIC_EXPORT === "1" ? "/HKRTTrafficInfo" : "";
 
 export const metadata: Metadata = {
-  title: "香港即時駕駛地圖 | Hong Kong RT Driving Map",
+  title: "香港即時交通資訊 | HK RT Traffic Info",
   description: "一站式查看全港衝紅燈攝影機、偵速攝影機、運輸署交通快拍、實時路段車速、特別交通消息、停車場空位及天文台雨量。官方開放數據，毋須登入。 | One-stop view of red-light cameras, speed cameras, traffic snapshots, live road-segment speeds, incidents, parking vacancy and HKO rainfall. Official open data.",
   manifest: `${assetBase}/site.webmanifest`,
   other: {
