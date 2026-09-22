@@ -1,9 +1,15 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 // Static export is served under a sub-path; Next does not prefix basePath onto
 // absolute metadata asset URLs, so prefix them explicitly for that build.
 const assetBase = process.env.STATIC_EXPORT === "1" ? "/HKRTTrafficInfo" : "";
+
+// Matches the app-icon plate colour so installed-app chrome, the PWA splash
+// screen and the browser toolbar blend into the icon instead of clashing.
+export const viewport: Viewport = {
+  themeColor: "#130f0a",
+};
 
 export const metadata: Metadata = {
   title: "香港實時交通資訊 | HK RT Traffic Info",
