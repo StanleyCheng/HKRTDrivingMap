@@ -13,6 +13,7 @@ type Snapshot = { imageUrl: string; updatedAt: string | null; fetchedAt: string 
 
 const icons = { redlight: TrafficCone, speed: Gauge, snapshot: Video, flow: Navigation, incident: TriangleAlert, parking: SquareParking, rainfall: CloudRain };
 const languageStorageKey = 'hk-traffic-language-v1';
+const topbarStorageKey = 'hk-traffic-topbar-v1';
 const compactLayoutQuery = '(max-width: 700px), (max-height: 520px) and (orientation: landscape)';
 const languageListeners = new Set<() => void>();
 let fallbackLanguage: Language | undefined;
@@ -82,6 +83,54 @@ function setStoredLanguage(language: Language) {
     // The in-memory subscription still updates the current tab when storage is unavailable.
   }
   languageListeners.forEach(listener => listener());
+}
+
+// The retracted top bar is a display preference, so it follows the same stored
+// subscription pattern as the language: no hydration mismatch, cross-tab sync.
+const topbarListeners = new Set<() => void>();
+let fallbackTopbarCollapsed = false;
+let topbarStorageWriteFailed = false;
+
+function getTopbarSnapshot(): boolean {
+  if (topbarStorageWriteFailed) return fallbackTopbarCollapsed;
+  try {
+    const stored = window.localStorage.getItem(topbarStorageKey);
+    if (stored === 'collapsed' || stored === 'expanded') fallbackTopbarCollapsed = stored === 'collapsed';
+  } catch {
+    // Storage can be unavailable in locked-down browser contexts.
+  }
+  return fallbackTopbarCollapsed;
+}
+
+function getServerTopbarSnapshot(): boolean {
+  return false;
+}
+
+function subscribeTopbar(listener: () => void) {
+  topbarListeners.add(listener);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === topbarStorageKey || event.key === null) {
+      topbarStorageWriteFailed = false;
+      fallbackTopbarCollapsed = event.newValue === 'collapsed';
+      listener();
+    }
+  };
+  window.addEventListener('storage', onStorage);
+  return () => {
+    topbarListeners.delete(listener);
+    window.removeEventListener('storage', onStorage);
+  };
+}
+
+function setStoredTopbar(collapsed: boolean) {
+  fallbackTopbarCollapsed = collapsed;
+  try {
+    window.localStorage.setItem(topbarStorageKey, collapsed ? 'collapsed' : 'expanded');
+    topbarStorageWriteFailed = false;
+  } catch {
+    topbarStorageWriteFailed = true;
+  }
+  topbarListeners.forEach(listener => listener());
 }
 
 function SnapshotImage({ camera, language }: { camera: Camera; language: Language }) {
@@ -182,6 +231,7 @@ export default function TrafficMonitor() {
   const [selectedSnapshot, setSelectedSnapshot] = useState<Camera | null>(null);
   const [showDetectors, setShowDetectors] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const topbarCollapsed = useSyncExternalStore(subscribeTopbar, getTopbarSnapshot, getServerTopbarSnapshot);
   const details = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
   const mobilePanelButton = useRef<HTMLButtonElement>(null);
@@ -192,6 +242,10 @@ export default function TrafficMonitor() {
     setMobilePanelOpen(false);
     setTimeout(() => mobilePanelButton.current?.focus(), 0);
   }, []);
+
+  function toggleTopbar() {
+    setStoredTopbar(!topbarCollapsed);
+  }
 
   useEffect(() => {
     document.documentElement.lang = language === 'en' ? 'en-HK' : 'zh-HK';
@@ -313,8 +367,11 @@ export default function TrafficMonitor() {
   const selectedRegion = selected && (language === 'en' ? selected.regionEn || selected.region : selected.region);
 
   return <main className="app-shell">
-    <header className="topbar" inert={mobilePanelOpen || undefined}>
-      <div className="brand"><div className="brand-icon"><Image src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/app-icon-192.png`} alt="" width={43} height={43} priority/></div><div><h1>{copy.brandTitle}</h1></div></div>
+    <header className={topbarCollapsed ? 'topbar collapsed' : 'topbar'} inert={mobilePanelOpen || undefined}>
+      <div className="brand">
+        <button type="button" className="brand-toggle" aria-expanded={!topbarCollapsed} aria-label={topbarCollapsed ? copy.expandTopbar : copy.collapseTopbar} title={topbarCollapsed ? copy.expandTopbar : copy.collapseTopbar} onClick={toggleTopbar}><span className="brand-icon"><Image src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/app-icon-192.png`} alt="" width={43} height={43} priority/></span></button>
+        <div className="brand-copy"><h1>{copy.brandTitle}</h1></div>
+      </div>
       <div className="header-meta">
         {states.flow.loading && !states.flow.data && <span className="live-loading-dot" role="status" title={copy.loadingLiveSpeeds} aria-label={copy.loadingLiveSpeeds}/>}
         <span className="official-tag"><ShieldCheck size={15}/>{copy.officialData}</span>
