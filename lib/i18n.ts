@@ -107,7 +107,7 @@ type AppMessages = {
 export const messages: Record<Language, AppMessages> = {
   zh: {
     languageControl: '語言選擇', english: '英文', chinese: '中文',
-    brandTitle: '香港即時交通資訊',
+    brandTitle: '香港實時交通資訊',
     officialData: '官方開放數據', sources: '資料來源', sidebarLabel: '圖層及詳情',
     overviewEyebrow: '香港 · 交通概覽', overviewTitle: '全港相機一覽', publishedLocations: '個已公布位置',
     completeInventory: '完整名冊', mapLayers: '地圖圖層', showingLocations: count => `顯示 ${count} 個`,
