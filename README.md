@@ -4,7 +4,8 @@ HK RT Traffic Info. Responsive bilingual (zh-HK/en-HK) map with officially publi
 
 ## Live site
 
-[Open HK RT Traffic Info](https://stanleycheng.github.io/HKRTTrafficInfo/)
+- [GitHub Pages](https://stanleycheng.github.io/HKRTTrafficInfo/) — static export under the repository sub-path.
+- [Vercel](https://hkrttrafficinfo.vercel.app/) — standard Next.js build, auto-deployed from `main`.
 
 ## Run
 
