@@ -6,6 +6,8 @@ type AppMessages = {
   chinese: string;
   collapseTopbar: string;
   expandTopbar: string;
+  collapseSidebar: string;
+  expandSidebar: string;
   brandTitle: string;
   officialData: string;
   sources: string;
@@ -110,6 +112,7 @@ export const messages: Record<Language, AppMessages> = {
   zh: {
     languageControl: '語言選擇', english: '英文', chinese: '中文',
     collapseTopbar: '收起頂部工具列，讓地圖顯示更大', expandTopbar: '展開頂部工具列',
+    collapseSidebar: '收起圖層面板，讓地圖顯示更大', expandSidebar: '展開圖層面板',
     brandTitle: '香港實時交通資訊',
     officialData: '官方開放數據', sources: '資料來源', sidebarLabel: '圖層及詳情',
     overviewEyebrow: '香港 · 交通概覽', overviewTitle: '全港相機一覽', publishedLocations: '個已公布位置',
@@ -173,6 +176,7 @@ export const messages: Record<Language, AppMessages> = {
   en: {
     languageControl: 'Language', english: 'English', chinese: 'Chinese',
     collapseTopbar: 'Collapse the top bar to free up map space', expandTopbar: 'Expand the top bar',
+    collapseSidebar: 'Collapse the layers panel to free up map space', expandSidebar: 'Expand the layers panel',
     brandTitle: 'HK RT Traffic Info',
     officialData: 'Official open data', sources: 'Sources', sidebarLabel: 'Layers and details',
     overviewEyebrow: 'HONG KONG · TRAFFIC OVERVIEW', overviewTitle: 'Camera overview', publishedLocations: 'published locations',

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Image from 'next/image';
-import { ArrowUpRight, Clock3, CloudRain, Gauge, Info, Layers, LoaderCircle, MapPin, Navigation, RefreshCw, ShieldCheck, SlidersHorizontal, SquareParking, TrafficCone, TriangleAlert, Video, X } from 'lucide-react';
+import { ArrowUpRight, Clock3, CloudRain, Gauge, Info, Layers, LoaderCircle, MapPin, Navigation, PanelLeftClose, PanelLeftOpen, RefreshCw, ShieldCheck, SlidersHorizontal, SquareParking, TrafficCone, TriangleAlert, Video, X } from 'lucide-react';
 import { formatRecordDate, messages } from '@/lib/i18n';
 import { getCameraData } from '@/lib/traffic-client';
 import { Camera, CameraData, FlowSegment, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn, speedLevelColors } from '@/lib/traffic';
@@ -13,7 +13,6 @@ type Snapshot = { imageUrl: string; updatedAt: string | null; fetchedAt: string 
 
 const icons = { redlight: TrafficCone, speed: Gauge, snapshot: Video, flow: Navigation, incident: TriangleAlert, parking: SquareParking, rainfall: CloudRain };
 const languageStorageKey = 'hk-traffic-language-v1';
-const topbarStorageKey = 'hk-traffic-topbar-v1';
 const compactLayoutQuery = '(max-width: 700px), (max-height: 520px) and (orientation: landscape)';
 const languageListeners = new Set<() => void>();
 let fallbackLanguage: Language | undefined;
@@ -85,53 +84,57 @@ function setStoredLanguage(language: Language) {
   languageListeners.forEach(listener => listener());
 }
 
-// The retracted top bar is a display preference, so it follows the same stored
-// subscription pattern as the language: no hydration mismatch, cross-tab sync.
-const topbarListeners = new Set<() => void>();
-let fallbackTopbarCollapsed = false;
-let topbarStorageWriteFailed = false;
-
-function getTopbarSnapshot(): boolean {
-  if (topbarStorageWriteFailed) return fallbackTopbarCollapsed;
-  try {
-    const stored = window.localStorage.getItem(topbarStorageKey);
-    if (stored === 'collapsed' || stored === 'expanded') fallbackTopbarCollapsed = stored === 'collapsed';
-  } catch {
-    // Storage can be unavailable in locked-down browser contexts.
-  }
-  return fallbackTopbarCollapsed;
-}
-
-function getServerTopbarSnapshot(): boolean {
-  return false;
-}
-
-function subscribeTopbar(listener: () => void) {
-  topbarListeners.add(listener);
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === topbarStorageKey || event.key === null) {
-      topbarStorageWriteFailed = false;
-      fallbackTopbarCollapsed = event.newValue === 'collapsed';
-      listener();
-    }
+// Panel display preferences (retracted top bar, retracted layers panel) follow the
+// same stored subscription pattern as the language: no hydration mismatch, no
+// cross-tab drift, and a write to worn-out storage still updates this tab.
+function createStoredFlag(storageKey: string) {
+  const listeners = new Set<() => void>();
+  let fallback = false;
+  let writeFailed = false;
+  return {
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      const onStorage = (event: StorageEvent) => {
+        if (event.key === storageKey || event.key === null) {
+          writeFailed = false;
+          fallback = event.newValue === 'collapsed';
+          listener();
+        }
+      };
+      window.addEventListener('storage', onStorage);
+      return () => {
+        listeners.delete(listener);
+        window.removeEventListener('storage', onStorage);
+      };
+    },
+    getSnapshot(): boolean {
+      if (writeFailed) return fallback;
+      try {
+        const stored = window.localStorage.getItem(storageKey);
+        if (stored === 'collapsed' || stored === 'expanded') fallback = stored === 'collapsed';
+      } catch {
+        // Storage can be unavailable in locked-down browser contexts.
+      }
+      return fallback;
+    },
+    getServerSnapshot(): boolean {
+      return false;
+    },
+    set(value: boolean) {
+      fallback = value;
+      try {
+        window.localStorage.setItem(storageKey, value ? 'collapsed' : 'expanded');
+        writeFailed = false;
+      } catch {
+        writeFailed = true;
+      }
+      listeners.forEach(listener => listener());
+    },
   };
-  window.addEventListener('storage', onStorage);
-  return () => {
-    topbarListeners.delete(listener);
-    window.removeEventListener('storage', onStorage);
-  };
 }
 
-function setStoredTopbar(collapsed: boolean) {
-  fallbackTopbarCollapsed = collapsed;
-  try {
-    window.localStorage.setItem(topbarStorageKey, collapsed ? 'collapsed' : 'expanded');
-    topbarStorageWriteFailed = false;
-  } catch {
-    topbarStorageWriteFailed = true;
-  }
-  topbarListeners.forEach(listener => listener());
-}
+const topbarFlag = createStoredFlag('hk-traffic-topbar-v1');
+const sidebarFlag = createStoredFlag('hk-traffic-sidebar-v1');
 
 function SnapshotImage({ camera, language }: { camera: Camera; language: Language }) {
   const copy = messages[language];
@@ -231,7 +234,8 @@ export default function TrafficMonitor() {
   const [selectedSnapshot, setSelectedSnapshot] = useState<Camera | null>(null);
   const [showDetectors, setShowDetectors] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
-  const topbarCollapsed = useSyncExternalStore(subscribeTopbar, getTopbarSnapshot, getServerTopbarSnapshot);
+  const topbarCollapsed = useSyncExternalStore(topbarFlag.subscribe, topbarFlag.getSnapshot, topbarFlag.getServerSnapshot);
+  const sidebarCollapsed = useSyncExternalStore(sidebarFlag.subscribe, sidebarFlag.getSnapshot, sidebarFlag.getServerSnapshot);
   const details = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
   const mobilePanelButton = useRef<HTMLButtonElement>(null);
@@ -244,7 +248,11 @@ export default function TrafficMonitor() {
   }, []);
 
   function toggleTopbar() {
-    setStoredTopbar(!topbarCollapsed);
+    topbarFlag.set(!topbarCollapsed);
+  }
+
+  function toggleSidebar(collapsed: boolean) {
+    sidebarFlag.set(collapsed);
   }
 
   useEffect(() => {
@@ -366,7 +374,7 @@ export default function TrafficMonitor() {
   const selectedDistrict = selected && (language === 'en' ? selected.districtEn || selected.district : selected.district);
   const selectedRegion = selected && (language === 'en' ? selected.regionEn || selected.region : selected.region);
 
-  return <main className="app-shell">
+  return <main className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}>
     <header className={topbarCollapsed ? 'topbar collapsed' : 'topbar'} inert={mobilePanelOpen || undefined}>
       <div className="brand">
         <button type="button" className="brand-toggle" aria-expanded={!topbarCollapsed} aria-label={topbarCollapsed ? copy.expandTopbar : copy.collapseTopbar} title={topbarCollapsed ? copy.expandTopbar : copy.collapseTopbar} onClick={toggleTopbar}><span className="brand-icon"><Image src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/app-icon-192.png`} alt="" width={43} height={43} priority/></span></button>
@@ -384,12 +392,13 @@ export default function TrafficMonitor() {
     </header>
     <div className="workspace">
       <TrafficMap cameras={cameras} segments={enabled.flow ? states.flow.data?.segments : undefined} selected={selected} selectedSegmentId={selected?.id && selected.id.startsWith('flow-segment-') ? selected.id : null} onSelect={choose} onSelectSegment={onSelectSegment} loading={loading} allDisabled={kinds.every(kind => !enabled[kind])} hasErrors={errors} language={language} inactive={mobilePanelOpen}/>
+      <button type="button" className="panel-reopen" aria-label={copy.expandSidebar} title={copy.expandSidebar} onClick={() => toggleSidebar(false)}><PanelLeftOpen size={18}/></button>
       <button className={`mobile-scrim ${mobilePanelOpen ? 'visible' : ''}`} aria-label={copy.closeControls} aria-hidden="true" tabIndex={-1} onClick={closeMobilePanel}/>
       <aside ref={panel} className={`sidebar ${mobilePanelOpen ? 'mobile-open' : ''}`} aria-label={copy.sidebarLabel} role={mobilePanelOpen ? 'dialog' : undefined} aria-modal={mobilePanelOpen || undefined}>
         <div className="mobile-panel-head"><strong>{copy.panelTitle}</strong><button className="close-button" aria-label={copy.closeControls} onClick={closeMobilePanel}><X size={19}/></button></div>
         <div className="sidebar-scroll">
           <p className="eyebrow">{copy.overviewEyebrow}</p>
-          <div className="overview-heading"><h2>{copy.overviewTitle}</h2><Layers size={19}/></div>
+          <div className="overview-heading"><h2>{copy.overviewTitle}</h2><span className="overview-heading-tools"><Layers size={19}/><button type="button" className="sidebar-toggle" aria-label={copy.collapseSidebar} title={copy.collapseSidebar} onClick={() => toggleSidebar(true)}><PanelLeftClose size={17}/></button></span></div>
           <div className="summary" aria-live="polite"><strong>{total ? total.toLocaleString(numberLocale) : loading ? '—' : '0'}</strong><span>{copy.publishedLocations}</span>{complete && <small>{copy.completeInventory}</small>}</div>
           <div className="section-label"><h3>{copy.mapLayers}</h3><span>{copy.showingLocations(cameras.length.toLocaleString(numberLocale))}</span></div>
           <div className="layer-list">{kinds.map(kind => {
