@@ -93,7 +93,8 @@ function getBasemapSnapshot(): Basemap {
   if (basemapStorageWriteFailed) return fallbackBasemap;
   try {
     const stored = window.localStorage.getItem(basemapStorageKey);
-    if (stored === 'osm' || stored === 'carto') fallbackBasemap = stored;
+    if (stored === 'positron' || stored === 'carto') fallbackBasemap = 'positron';
+    else if (stored === 'osm') fallbackBasemap = 'osm';
   } catch {
     // Storage can be unavailable in locked-down browser contexts; keep the in-memory choice.
   }
@@ -109,7 +110,7 @@ function subscribeBasemap(listener: () => void) {
   const onStorage = (event: StorageEvent) => {
     if (event.key === basemapStorageKey || event.key === null) {
       basemapStorageWriteFailed = false;
-      fallbackBasemap = event.newValue === 'carto' ? 'carto' : 'osm';
+      fallbackBasemap = event.newValue === 'positron' || event.newValue === 'carto' ? 'positron' : 'osm';
       listener();
     }
   };
@@ -437,7 +438,7 @@ export default function TrafficMonitor() {
   const selectedName = selected && (language === 'en' ? selected.nameEn || selected.name : selected.name);
   const selectedDistrict = selected && (language === 'en' ? selected.districtEn || selected.district : selected.district);
   const selectedRegion = selected && (language === 'en' ? selected.regionEn || selected.region : selected.region);
-  const basemapAction = basemap === 'osm' ? copy.switchToCarto : copy.switchToOsm;
+  const basemapAction = basemap === 'osm' ? copy.switchToPositron : copy.switchToOsm;
 
   return <main className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}>
     <header className={topbarCollapsed ? 'topbar collapsed' : 'topbar'} inert={mobilePanelOpen || undefined}>
@@ -452,7 +453,7 @@ export default function TrafficMonitor() {
           <button type="button" aria-pressed={language === 'en'} title={copy.english} onClick={() => setStoredLanguage('en')}>ENG</button>
           <button type="button" aria-pressed={language === 'zh'} title={copy.chinese} onClick={() => setStoredLanguage('zh')}>CHN</button>
         </div>
-        <button type="button" className="basemap-toggle" aria-label={basemapAction} title={basemapAction} onClick={() => setStoredBasemap(basemap === 'osm' ? 'carto' : 'osm')}>{basemap === 'osm' ? 'CARTO' : 'OSM'}</button>
+        <button type="button" className="basemap-toggle" aria-label={basemapAction} title={basemapAction} onClick={() => setStoredBasemap(basemap === 'osm' ? 'positron' : 'osm')}>{basemap === 'osm' ? 'POSITRON' : 'OSM'}</button>
         <button className="source-button" aria-label={copy.sources} onClick={() => dialog.current?.showModal()}><Info size={17}/><span>{copy.sources}</span></button>
       </div>
     </header>
@@ -631,7 +632,7 @@ export default function TrafficMonitor() {
           </section>;
         })}
         <p className="dialog-footnote">{copy.sourceFootnote}</p>
-        <p className="dialog-footnote">{copy.basemap}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">{copy.osmContributors}</a>{basemap === 'carto' && <> · <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">{copy.cartoPositron}</a></>}{copy.nonGovernmentBasemap}<a href="https://data.gov.hk/tc/terms-and-conditions" target="_blank" rel="noreferrer">{copy.governmentTerms}</a>.</p>
+        <p className="dialog-footnote">{copy.basemap}{basemap === 'positron' && <><a href="https://openfreemap.org/" target="_blank" rel="noreferrer">{copy.openFreeMapPositron}</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a> · </>}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">{copy.osmContributors}</a>{copy.nonGovernmentBasemap}<a href="https://data.gov.hk/tc/terms-and-conditions" target="_blank" rel="noreferrer">{copy.governmentTerms}</a>.</p>
       </div>
     </dialog>
   </main>;

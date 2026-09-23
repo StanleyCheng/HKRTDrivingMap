@@ -17,16 +17,16 @@ const symbols = {
 const FLOW_SEGMENT_WEIGHT = 4.8;
 const SELECTED_FLOW_SEGMENT_WEIGHT = 7.2;
 const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors';
-const CARTO_ATTRIBUTION = `${OSM_ATTRIBUTION} &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>`;
+const OPENFREEMAP_ATTRIBUTION = '<a href="https://openfreemap.org/" target="_blank" rel="noreferrer">OpenFreeMap</a> &copy; <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>';
 
-export type Basemap = 'osm' | 'carto';
+export type Basemap = 'osm' | 'positron';
 type Props = { cameras: Camera[]; segments?: FlowSegment[]; selected: Camera | null; selectedSegmentId?: string | null; onSelect: (camera: Camera) => void; onSelectSegment?: (segment: FlowSegment) => void; loading: boolean; allDisabled: boolean; hasErrors: boolean; language: Language; basemap: Basemap; inactive?: boolean };
 export default function TrafficMap({ cameras, segments, selected, selectedSegmentId, onSelect, onSelectSegment, loading, allDisabled, hasErrors, language, basemap, inactive = false }: Props) {
   const copy = messages[language];
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<Leaflet.Map | null>(null);
   const library = useRef<typeof Leaflet | null>(null);
-  const basemapLayer = useRef<Leaflet.TileLayer | null>(null);
+  const basemapLayer = useRef<Leaflet.Layer | null>(null);
   const cluster = useRef<Leaflet.MarkerClusterGroup | null>(null);
   const markers = useRef(new Map<string, Leaflet.Marker>());
   const previousSelection = useRef<string | null>(null);
@@ -73,21 +73,47 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
   useEffect(() => {
     const L = library.current, m = map.current;
     if (!ready || !L || !m) return;
+    let disposed = false;
     setMapError(false);
     basemapLayer.current?.removeFrom(m);
-    const cartoKey = process.env.NEXT_PUBLIC_CARTO_BASEMAP_KEY?.trim();
-    const tileUrl = basemap === 'carto'
-      ? `https://{s}.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png${cartoKey ? `?key=${encodeURIComponent(cartoKey)}` : ''}`
-      : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-    const nextLayer = L.tileLayer(tileUrl, {
-      attribution: basemap === 'carto' ? CARTO_ATTRIBUTION : OSM_ATTRIBUTION,
-      maxZoom: basemap === 'carto' ? 20 : 19,
-      ...(basemap === 'carto' ? { subdomains: 'abcd' } : {}),
-    }).on('tileerror', () => setMapError(true));
-    basemapLayer.current = nextLayer.addTo(m);
+    basemapLayer.current = null;
+    (async () => {
+      try {
+        let nextLayer: Leaflet.Layer;
+        if (basemap === 'positron') {
+          const [{ maplibreGL }, { setWorkerUrl }] = await Promise.all([
+            import('@maplibre/maplibre-gl-leaflet'),
+            import('maplibre-gl'),
+          ]);
+          if (disposed) return;
+          setWorkerUrl(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/vendor/maplibre-gl/maplibre-gl-worker.mjs`);
+          const positronLayer = maplibreGL({
+            style: 'https://tiles.openfreemap.org/styles/positron',
+            attributionControl: { customAttribution: OPENFREEMAP_ATTRIBUTION },
+            maxZoom: 20,
+          });
+          positronLayer.addTo(m);
+          positronLayer.getMaplibreMap().on('error', () => { if (!disposed) setMapError(true); });
+          nextLayer = positronLayer;
+        } else {
+          nextLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: OSM_ATTRIBUTION,
+            maxZoom: 19,
+          }).on('tileerror', () => { if (!disposed) setMapError(true); }).addTo(m);
+        }
+        if (disposed) {
+          nextLayer.removeFrom(m);
+          return;
+        }
+        basemapLayer.current = nextLayer;
+      } catch {
+        if (!disposed) setMapError(true);
+      }
+    })();
     return () => {
-      if (basemapLayer.current === nextLayer) basemapLayer.current = null;
-      nextLayer.removeFrom(m);
+      disposed = true;
+      basemapLayer.current?.removeFrom(m);
+      basemapLayer.current = null;
     };
   }, [basemap, ready]);
   useEffect(() => {
@@ -145,7 +171,7 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
     else map.current?.setView([22.355, 114.13], 11);
   }
   return <section className="map-area" aria-label={copy.mapLabel} aria-hidden={inactive || undefined} inert={inactive || undefined}>
-    <div ref={element} className="map-canvas" role="group" aria-label={copy.mapKeyboardHelp} />
+    <div ref={element} className="map-canvas" data-basemap={basemap} role="group" aria-label={copy.mapKeyboardHelp} />
     <div className="map-tools"><div className="zoom-buttons"><button aria-label={copy.zoomIn} title={copy.zoomIn} onClick={() => map.current?.zoomIn()}><Plus size={19}/></button><button aria-label={copy.zoomOut} title={copy.zoomOut} onClick={() => map.current?.zoomOut()}><Minus size={19}/></button></div><button aria-label={copy.showAll} title={copy.returnToHongKong} onClick={fit}><LocateFixed size={20}/></button></div>
     {mapError && <div className="map-error" role="alert">{copy.mapLoadFailed}</div>}
     {!ready && !mapError && <div className="map-loading"><LoaderCircle className="spin" size={20}/> {copy.mapLoading}</div>}

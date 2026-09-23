@@ -9,7 +9,7 @@ type AppMessages = {
   collapseSidebar: string;
   expandSidebar: string;
   brandTitle: string;
-  switchToCarto: string;
+  switchToPositron: string;
   switchToOsm: string;
   officialData: string;
   sources: string;
@@ -78,7 +78,7 @@ type AppMessages = {
   sourceFootnote: string;
   basemap: string;
   osmContributors: string;
-  cartoPositron: string;
+  openFreeMapPositron: string;
   nonGovernmentBasemap: string;
   governmentTerms: string;
   snapshotAlt: (name: string) => string;
@@ -115,7 +115,7 @@ export const messages: Record<Language, AppMessages> = {
     collapseTopbar: '收起頂部工具列，讓地圖顯示更大', expandTopbar: '展開頂部工具列',
     collapseSidebar: '收起圖層面板，讓地圖顯示更大', expandSidebar: '展開圖層面板',
     brandTitle: '香港實時交通資訊',
-    switchToCarto: '切換至 CARTO Positron 淺灰底圖', switchToOsm: '切換至 OpenStreetMap 底圖',
+    switchToPositron: '切換至 OpenFreeMap Positron 淺灰底圖', switchToOsm: '切換至 OpenStreetMap 底圖',
     officialData: '官方開放數據', sources: '資料來源', sidebarLabel: '圖層及詳情',
     overviewEyebrow: '香港 · 交通概覽', overviewTitle: '全港相機一覽', publishedLocations: '個已公布位置',
     completeInventory: '完整名冊', mapLayers: '地圖圖層', showingLocations: count => `顯示 ${count} 個`,
@@ -159,7 +159,7 @@ export const messages: Record<Language, AppMessages> = {
     dataGovLink: '資料一線通', locationXml: '完整位置 XML', officialApi: 'CSDI 官方 API',
     sourceChecked: (count, expected, time, stale) => `已核對 ${count} / ${expected} 筆 · ${time} 讀取${stale ? '（更新失敗，保留上次名冊）' : ''}`,
     sourceFootnote: '所有位置及交通影像均取自香港政府，沒有模擬交通資料。名冊每五分鐘重新讀取。快拍為定時更新的靜態影像，並非直播；官方可能回傳「No Service」影像。本網站不代表香港特別行政區政府。',
-    basemap: '底圖：', osmContributors: 'OpenStreetMap 貢獻者', cartoPositron: 'CARTO Positron', nonGovernmentBasemap: '（非政府底圖）。', governmentTerms: '政府開放數據使用條款',
+    basemap: '底圖：', osmContributors: 'OpenStreetMap 貢獻者', openFreeMapPositron: 'OpenFreeMap Positron', nonGovernmentBasemap: '（非政府底圖）。', governmentTerms: '政府開放數據使用條款',
     snapshotAlt: name => `${name}的官方交通快拍`,
     snapshotTimeout: '快拍載入逾時，請重試。', snapshotDisplayFailed: '影像無法顯示，請重試。',
     loadingSnapshot: '載入最新快拍', reloadSnapshot: '重新載入快拍', snapshotUpdated: time => `影像更新 ${time}`,
@@ -180,7 +180,7 @@ export const messages: Record<Language, AppMessages> = {
     collapseTopbar: 'Collapse the top bar to free up map space', expandTopbar: 'Expand the top bar',
     collapseSidebar: 'Collapse the layers panel to free up map space', expandSidebar: 'Expand the layers panel',
     brandTitle: 'HK Real-Time Traffic Info',
-    switchToCarto: 'Switch to the CARTO Positron light-gray basemap', switchToOsm: 'Switch to the OpenStreetMap basemap',
+    switchToPositron: 'Switch to the OpenFreeMap Positron light-gray basemap', switchToOsm: 'Switch to the OpenStreetMap basemap',
     officialData: 'Official open data', sources: 'Sources', sidebarLabel: 'Layers and details',
     overviewEyebrow: 'HONG KONG · TRAFFIC OVERVIEW', overviewTitle: 'Camera overview', publishedLocations: 'published locations',
     completeInventory: 'Complete list', mapLayers: 'Map layers', showingLocations: count => `Showing ${count}`,
@@ -224,7 +224,7 @@ export const messages: Record<Language, AppMessages> = {
     dataGovLink: 'DATA.GOV.HK', locationXml: 'Complete location XML', officialApi: 'Official CSDI API',
     sourceChecked: (count, expected, time, stale) => `Verified ${count} / ${expected} records · fetched ${time}${stale ? ' (update failed; last list retained)' : ''}`,
     sourceFootnote: 'All locations and traffic images come from the Hong Kong Government; no traffic data is simulated. Location lists refresh every five minutes. Snapshots are periodically updated still images, not live video, and the official source may return a “No Service” image. This website does not represent the Government of the Hong Kong SAR.',
-    basemap: 'Basemap: ', osmContributors: 'OpenStreetMap contributors', cartoPositron: 'CARTO Positron', nonGovernmentBasemap: ' (non-government basemap). ', governmentTerms: 'Government open-data terms',
+    basemap: 'Basemap: ', osmContributors: 'OpenStreetMap contributors', openFreeMapPositron: 'OpenFreeMap Positron', nonGovernmentBasemap: ' (non-government basemap). ', governmentTerms: 'Government open-data terms',
     snapshotAlt: name => `Official traffic snapshot for ${name}`,
     snapshotTimeout: 'The snapshot timed out. Please retry.', snapshotDisplayFailed: 'The image could not be displayed. Please retry.',
     loadingSnapshot: 'Loading latest snapshot', reloadSnapshot: 'Reload snapshot', snapshotUpdated: time => `Image updated ${time}`,

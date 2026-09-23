@@ -17,6 +17,7 @@
 /.next/
 /.vinext/
 /out/
+/public/vendor/maplibre-gl/
 
 # misc
 .DS_Store
