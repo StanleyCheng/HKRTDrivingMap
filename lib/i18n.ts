@@ -177,7 +177,7 @@ export const messages: Record<Language, AppMessages> = {
     languageControl: 'Language', english: 'English', chinese: 'Chinese',
     collapseTopbar: 'Collapse the top bar to free up map space', expandTopbar: 'Expand the top bar',
     collapseSidebar: 'Collapse the layers panel to free up map space', expandSidebar: 'Expand the layers panel',
-    brandTitle: 'HK RT Traffic Info',
+    brandTitle: '香港實時交通資訊',
     officialData: 'Official open data', sources: 'Sources', sidebarLabel: 'Layers and details',
     overviewEyebrow: 'HONG KONG · TRAFFIC OVERVIEW', overviewTitle: 'Camera overview', publishedLocations: 'published locations',
     completeInventory: 'Complete list', mapLayers: 'Map layers', showingLocations: count => `Showing ${count}`,
