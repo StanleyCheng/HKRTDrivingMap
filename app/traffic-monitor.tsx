@@ -7,17 +7,21 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { formatRecordDate, messages } from '@/lib/i18n';
 import { getCameraData } from '@/lib/traffic-client';
 import { Camera, CameraData, FlowSegment, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn, speedLevelColors } from '@/lib/traffic';
-import TrafficMap from './traffic-map';
+import TrafficMap, { type Basemap } from './traffic-map';
 
 type LayerState = { data?: CameraData; loading: boolean; error: boolean };
 type Snapshot = { imageUrl: string; updatedAt: string | null; fetchedAt: string };
 
 const icons = { redlight: TrafficCone, speed: Gauge, snapshot: Video, flow: Navigation, incident: TriangleAlert, parking: SquareParking, rainfall: CloudRain };
 const languageStorageKey = 'hk-traffic-language-v1';
+const basemapStorageKey = 'hk-traffic-basemap-v1';
 const compactLayoutQuery = '(max-width: 700px), (max-height: 520px) and (orientation: landscape)';
 const languageListeners = new Set<() => void>();
+const basemapListeners = new Set<() => void>();
 let fallbackLanguage: Language | undefined;
+let fallbackBasemap: Basemap = 'osm';
 let storageWriteFailed = false;
+let basemapStorageWriteFailed = false;
 
 function cameraFromFlowSegment(segment: FlowSegment, dataUpdated?: string): Camera {
   const mid = segment.path[Math.floor(segment.path.length / 2)] ?? segment.path[0] ?? [0, 0];
@@ -83,6 +87,48 @@ function setStoredLanguage(language: Language) {
     // The in-memory subscription still updates the current tab when storage is unavailable.
   }
   languageListeners.forEach(listener => listener());
+}
+
+function getBasemapSnapshot(): Basemap {
+  if (basemapStorageWriteFailed) return fallbackBasemap;
+  try {
+    const stored = window.localStorage.getItem(basemapStorageKey);
+    if (stored === 'osm' || stored === 'carto') fallbackBasemap = stored;
+  } catch {
+    // Storage can be unavailable in locked-down browser contexts; keep the in-memory choice.
+  }
+  return fallbackBasemap;
+}
+
+function getServerBasemapSnapshot(): Basemap {
+  return 'osm';
+}
+
+function subscribeBasemap(listener: () => void) {
+  basemapListeners.add(listener);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === basemapStorageKey || event.key === null) {
+      basemapStorageWriteFailed = false;
+      fallbackBasemap = event.newValue === 'carto' ? 'carto' : 'osm';
+      listener();
+    }
+  };
+  window.addEventListener('storage', onStorage);
+  return () => {
+    basemapListeners.delete(listener);
+    window.removeEventListener('storage', onStorage);
+  };
+}
+
+function setStoredBasemap(basemap: Basemap) {
+  fallbackBasemap = basemap;
+  try {
+    window.localStorage.setItem(basemapStorageKey, basemap);
+    basemapStorageWriteFailed = false;
+  } catch {
+    basemapStorageWriteFailed = true;
+  }
+  basemapListeners.forEach(listener => listener());
 }
 
 // Panel display preferences (retracted top bar, retracted layers panel) follow the
@@ -220,6 +266,7 @@ function SnapshotImage({ camera, language }: { camera: Camera; language: Languag
 
 export default function TrafficMonitor() {
   const language = useSyncExternalStore(subscribeLanguage, getLanguageSnapshot, getServerLanguageSnapshot);
+  const basemap = useSyncExternalStore(subscribeBasemap, getBasemapSnapshot, getServerBasemapSnapshot);
   const copy = messages[language];
   const numberLocale = language === 'en' ? 'en-HK' : 'zh-HK';
   const [enabled, setEnabled] = useState<Record<LayerKind, boolean>>({ flow: true, incident: true, redlight: false, speed: false, snapshot: false, parking: false, rainfall: false });
@@ -235,6 +282,7 @@ export default function TrafficMonitor() {
   const [selectedSnapshot, setSelectedSnapshot] = useState<Camera | null>(null);
   const [showDetectors, setShowDetectors] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [mobileTooltip, setMobileTooltip] = useState<LayerKind | null>(null);
   const topbarCollapsed = useSyncExternalStore(topbarFlag.subscribe, topbarFlag.getSnapshot, topbarFlag.getServerSnapshot);
   const sidebarCollapsed = useSyncExternalStore(sidebarFlag.subscribe, sidebarFlag.getSnapshot, sidebarFlag.getServerSnapshot);
   const details = useRef<HTMLDivElement>(null);
@@ -242,6 +290,7 @@ export default function TrafficMonitor() {
   const mobilePanelButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const inflight = useRef(new Set<LayerKind>());
+  const mobileTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const closeMobilePanel = useCallback(() => {
     setMobilePanelOpen(false);
@@ -259,6 +308,10 @@ export default function TrafficMonitor() {
   useEffect(() => {
     document.documentElement.lang = language === 'en' ? 'en-HK' : 'zh-HK';
   }, [language]);
+
+  useEffect(() => () => {
+    if (mobileTooltipTimer.current) clearTimeout(mobileTooltipTimer.current);
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia(compactLayoutQuery);
@@ -361,6 +414,16 @@ export default function TrafficMonitor() {
     if (selected?.kind === kind && enabled[kind]) setSelectedSnapshot(null);
   }
 
+  function toggleMobileLayer(kind: LayerKind) {
+    toggle(kind);
+    setMobileTooltip(kind);
+    if (mobileTooltipTimer.current) clearTimeout(mobileTooltipTimer.current);
+    mobileTooltipTimer.current = setTimeout(() => {
+      setMobileTooltip(current => current === kind ? null : current);
+      mobileTooltipTimer.current = null;
+    }, 1800);
+  }
+
   const choose = useCallback((camera: Camera) => {
     setSelectedSnapshot(camera);
     if (window.matchMedia(compactLayoutQuery).matches) setMobilePanelOpen(true);
@@ -374,6 +437,7 @@ export default function TrafficMonitor() {
   const selectedName = selected && (language === 'en' ? selected.nameEn || selected.name : selected.name);
   const selectedDistrict = selected && (language === 'en' ? selected.districtEn || selected.district : selected.district);
   const selectedRegion = selected && (language === 'en' ? selected.regionEn || selected.region : selected.region);
+  const basemapAction = basemap === 'osm' ? copy.switchToCarto : copy.switchToOsm;
 
   return <main className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}>
     <header className={topbarCollapsed ? 'topbar collapsed' : 'topbar'} inert={mobilePanelOpen || undefined}>
@@ -388,11 +452,12 @@ export default function TrafficMonitor() {
           <button type="button" aria-pressed={language === 'en'} title={copy.english} onClick={() => setStoredLanguage('en')}>ENG</button>
           <button type="button" aria-pressed={language === 'zh'} title={copy.chinese} onClick={() => setStoredLanguage('zh')}>CHN</button>
         </div>
+        <button type="button" className="basemap-toggle" aria-label={basemapAction} title={basemapAction} onClick={() => setStoredBasemap(basemap === 'osm' ? 'carto' : 'osm')}>{basemap === 'osm' ? 'CARTO' : 'OSM'}</button>
         <button className="source-button" aria-label={copy.sources} onClick={() => dialog.current?.showModal()}><Info size={17}/><span>{copy.sources}</span></button>
       </div>
     </header>
     <div className="workspace">
-      <TrafficMap cameras={cameras} segments={enabled.flow ? states.flow.data?.segments : undefined} selected={selected} selectedSegmentId={selected?.id && selected.id.startsWith('flow-segment-') ? selected.id : null} onSelect={choose} onSelectSegment={onSelectSegment} loading={loading} allDisabled={kinds.every(kind => !enabled[kind])} hasErrors={errors} language={language} inactive={mobilePanelOpen}/>
+      <TrafficMap cameras={cameras} segments={enabled.flow ? states.flow.data?.segments : undefined} selected={selected} selectedSegmentId={selected?.id && selected.id.startsWith('flow-segment-') ? selected.id : null} onSelect={choose} onSelectSegment={onSelectSegment} loading={loading} allDisabled={kinds.every(kind => !enabled[kind])} hasErrors={errors} language={language} basemap={basemap} inactive={mobilePanelOpen}/>
       <button type="button" className="panel-reopen" aria-label={copy.expandSidebar} title={copy.expandSidebar} onClick={() => toggleSidebar(false)}><PanelLeftOpen size={18}/></button>
       <button className={`mobile-scrim ${mobilePanelOpen ? 'visible' : ''}`} aria-label={copy.closeControls} aria-hidden="true" tabIndex={-1} onClick={closeMobilePanel}/>
       <aside ref={panel} className={`sidebar ${mobilePanelOpen ? 'mobile-open' : ''}`} aria-label={copy.sidebarLabel} role={mobilePanelOpen ? 'dialog' : undefined} aria-modal={mobilePanelOpen || undefined}>
@@ -512,15 +577,41 @@ export default function TrafficMonitor() {
             </Tooltip>;
           })}
         </nav>
+        <nav className="mobile-dock" aria-label={copy.mapLayers} aria-hidden={mobilePanelOpen || undefined} inert={mobilePanelOpen || undefined}>
+          {kinds.map(kind => {
+            const Icon = icons[kind];
+            const text = layerText(kind, language);
+            const state = states[kind];
+            const enabledLabel = language === 'en' ? enabled[kind] ? 'On' : 'Off' : enabled[kind] ? '已開啟' : '已關閉';
+            const countLabel = state.data ? `${state.data.count.toLocaleString(numberLocale)} ${copy.publishedLocations}` : copy.noData;
+            return <Tooltip key={kind} open={mobileTooltip === kind} onOpenChange={open => setMobileTooltip(current => open ? kind : current === kind ? null : current)}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={`mobile-layer-button ${kind} ${enabled[kind] ? 'active' : ''} ${state.error ? 'error' : ''}`}
+                  aria-label={`${copy.layerSwitch(text.name)}: ${enabledLabel}`}
+                  aria-pressed={enabled[kind]}
+                  onClick={() => toggleMobileLayer(kind)}
+                >
+                  <Icon size={22}/>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={12} collisionPadding={12} className="layer-dock-tooltip">
+                <strong>{text.name}</strong>
+                <span>{enabledLabel} · {countLabel}</span>
+                {state.loading && <span>{copy.loadingOfficialData}</span>}
+                {state.error && <span className="tooltip-error">{state.data ? copy.layerUpdateFailed : copy.dataLoadFailed}</span>}
+              </TooltipContent>
+            </Tooltip>;
+          })}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button ref={mobilePanelButton} type="button" className="mobile-panel-button" aria-label={copy.openControls} aria-expanded={mobilePanelOpen} onClick={() => setMobilePanelOpen(true)}><SlidersHorizontal size={22}/></button>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={12} collisionPadding={12} className="layer-dock-tooltip"><strong>{selected ? copy.cameraDetails : copy.panelTitle}</strong></TooltipContent>
+          </Tooltip>
+        </nav>
       </TooltipProvider>
-      <nav className="mobile-dock" aria-label={copy.mapLayers} aria-hidden={mobilePanelOpen || undefined} inert={mobilePanelOpen || undefined}>
-        {kinds.map(kind => {
-          const Icon = icons[kind];
-          const text = layerText(kind, language);
-          return <button key={kind} className={`mobile-layer-button ${kind} ${enabled[kind] ? 'active' : ''}`} aria-label={copy.layerSwitch(text.name)} aria-pressed={enabled[kind]} onClick={() => toggle(kind)}><Icon size={19}/><span>{text.short}</span></button>;
-        })}
-        <button ref={mobilePanelButton} className="mobile-panel-button" aria-label={copy.openControls} aria-expanded={mobilePanelOpen} onClick={() => setMobilePanelOpen(true)}><SlidersHorizontal size={19}/><span>{selected ? copy.cameraDetails : copy.panelTitle}</span></button>
-      </nav>
     </div>
     <dialog ref={dialog} className="sources-dialog" aria-labelledby="sources-title" onClick={event => {
       if (event.target === event.currentTarget) dialog.current?.close();
@@ -540,7 +631,7 @@ export default function TrafficMonitor() {
           </section>;
         })}
         <p className="dialog-footnote">{copy.sourceFootnote}</p>
-        <p className="dialog-footnote">{copy.basemap}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">{copy.osmContributors}</a>{copy.nonGovernmentBasemap}<a href="https://data.gov.hk/tc/terms-and-conditions" target="_blank" rel="noreferrer">{copy.governmentTerms}</a>.</p>
+        <p className="dialog-footnote">{copy.basemap}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">{copy.osmContributors}</a>{basemap === 'carto' && <> · <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">{copy.cartoPositron}</a></>}{copy.nonGovernmentBasemap}<a href="https://data.gov.hk/tc/terms-and-conditions" target="_blank" rel="noreferrer">{copy.governmentTerms}</a>.</p>
       </div>
     </dialog>
   </main>;

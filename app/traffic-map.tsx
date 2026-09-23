@@ -16,12 +16,17 @@ const symbols = {
 };
 const FLOW_SEGMENT_WEIGHT = 4.8;
 const SELECTED_FLOW_SEGMENT_WEIGHT = 7.2;
-type Props = { cameras: Camera[]; segments?: FlowSegment[]; selected: Camera | null; selectedSegmentId?: string | null; onSelect: (camera: Camera) => void; onSelectSegment?: (segment: FlowSegment) => void; loading: boolean; allDisabled: boolean; hasErrors: boolean; language: Language; inactive?: boolean };
-export default function TrafficMap({ cameras, segments, selected, selectedSegmentId, onSelect, onSelectSegment, loading, allDisabled, hasErrors, language, inactive = false }: Props) {
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors';
+const CARTO_ATTRIBUTION = `${OSM_ATTRIBUTION} &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>`;
+
+export type Basemap = 'osm' | 'carto';
+type Props = { cameras: Camera[]; segments?: FlowSegment[]; selected: Camera | null; selectedSegmentId?: string | null; onSelect: (camera: Camera) => void; onSelectSegment?: (segment: FlowSegment) => void; loading: boolean; allDisabled: boolean; hasErrors: boolean; language: Language; basemap: Basemap; inactive?: boolean };
+export default function TrafficMap({ cameras, segments, selected, selectedSegmentId, onSelect, onSelectSegment, loading, allDisabled, hasErrors, language, basemap, inactive = false }: Props) {
   const copy = messages[language];
   const element = useRef<HTMLDivElement>(null);
   const map = useRef<Leaflet.Map | null>(null);
   const library = useRef<typeof Leaflet | null>(null);
+  const basemapLayer = useRef<Leaflet.TileLayer | null>(null);
   const cluster = useRef<Leaflet.MarkerClusterGroup | null>(null);
   const markers = useRef(new Map<string, Leaflet.Marker>());
   const previousSelection = useRef<string | null>(null);
@@ -48,9 +53,6 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
       library.current = L;
       const m = L.map(element.current, { zoomControl: false, minZoom: 10, maxZoom: 19, attributionControl: true }).setView([22.355, 114.13], 11);
       map.current = m;
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors', maxZoom: 19,
-      }).on('tileerror', () => setMapError(true)).addTo(m);
       L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(m);
       cluster.current = L.markerClusterGroup({ maxClusterRadius: 42, showCoverageOnHover: false, spiderfyOnMaxZoom: true, spiderfyDistanceMultiplier: 1.8, animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         iconCreateFunction(group) {
@@ -66,8 +68,28 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
       observer.observe(element.current);
       setReady(true);
     })().catch(() => setMapError(true));
-    return () => { disposed = true; observer?.disconnect(); map.current?.remove(); map.current = null; };
+    return () => { disposed = true; observer?.disconnect(); map.current?.remove(); map.current = null; basemapLayer.current = null; };
   }, []);
+  useEffect(() => {
+    const L = library.current, m = map.current;
+    if (!ready || !L || !m) return;
+    setMapError(false);
+    basemapLayer.current?.removeFrom(m);
+    const cartoKey = process.env.NEXT_PUBLIC_CARTO_BASEMAP_KEY?.trim();
+    const tileUrl = basemap === 'carto'
+      ? `https://{s}.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png${cartoKey ? `?key=${encodeURIComponent(cartoKey)}` : ''}`
+      : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    const nextLayer = L.tileLayer(tileUrl, {
+      attribution: basemap === 'carto' ? CARTO_ATTRIBUTION : OSM_ATTRIBUTION,
+      maxZoom: basemap === 'carto' ? 20 : 19,
+      ...(basemap === 'carto' ? { subdomains: 'abcd' } : {}),
+    }).on('tileerror', () => setMapError(true));
+    basemapLayer.current = nextLayer.addTo(m);
+    return () => {
+      if (basemapLayer.current === nextLayer) basemapLayer.current = null;
+      nextLayer.removeFrom(m);
+    };
+  }, [basemap, ready]);
   useEffect(() => {
     const L = library.current, m = map.current, group = cluster.current;
     if (!ready || !L || !m || !group) return;
