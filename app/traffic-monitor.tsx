@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import Image from 'next/image';
 import { ArrowUpRight, Clock3, CloudRain, Gauge, Info, Layers, LoaderCircle, MapPin, Navigation, PanelLeftClose, PanelLeftOpen, RefreshCw, ShieldCheck, SlidersHorizontal, SquareParking, TrafficCone, TriangleAlert, Video, X } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatRecordDate, messages } from '@/lib/i18n';
 import { getCameraData } from '@/lib/traffic-client';
 import { Camera, CameraData, FlowSegment, Language, LayerKind, featureService, hkTime, kinds, layerText, layers, snapshotInventory, snapshotInventoryEn, speedLevelColors } from '@/lib/traffic';
@@ -482,6 +483,36 @@ export default function TrafficMonitor() {
         </div>
         <footer className="sidebar-footer"><div className="connection" aria-live="polite"><span className={`connection-dot ${errors ? 'warning' : ''}`}/>{loading ? copy.loadingOfficialData : errors ? copy.partialUpdateFailure : latest ? copy.inventoryFetched(hkTime(latest, false, language)) : copy.noData}</div><button className="icon-button" title={copy.refreshAll} aria-label={copy.refreshAll} disabled={loading} onClick={() => kinds.forEach(kind => fetchLayer(kind))}><RefreshCw size={15} className={loading ? 'spin' : ''}/></button></footer>
       </aside>
+      <TooltipProvider delayDuration={180} skipDelayDuration={100}>
+        <nav className="desktop-layer-dock" aria-label={copy.mapLayers}>
+          {kinds.map(kind => {
+            const Icon = icons[kind];
+            const text = layerText(kind, language);
+            const state = states[kind];
+            const enabledLabel = language === 'en' ? enabled[kind] ? 'On' : 'Off' : enabled[kind] ? '已開啟' : '已關閉';
+            const countLabel = state.data ? `${state.data.count.toLocaleString(numberLocale)} ${copy.publishedLocations}` : copy.noData;
+            return <Tooltip key={kind}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={`desktop-layer-button ${kind} ${enabled[kind] ? 'active' : ''} ${state.error ? 'error' : ''}`}
+                  aria-label={`${copy.layerSwitch(text.name)}: ${enabledLabel}`}
+                  aria-pressed={enabled[kind]}
+                  onClick={() => toggle(kind)}
+                >
+                  <Icon size={22}/>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={12} collisionPadding={16} className="layer-dock-tooltip">
+                <strong>{text.name}</strong>
+                <span>{enabledLabel} · {countLabel}</span>
+                {state.loading && <span>{copy.loadingOfficialData}</span>}
+                {state.error && <span className="tooltip-error">{state.data ? copy.layerUpdateFailed : copy.dataLoadFailed}</span>}
+              </TooltipContent>
+            </Tooltip>;
+          })}
+        </nav>
+      </TooltipProvider>
       <nav className="mobile-dock" aria-label={copy.mapLayers} aria-hidden={mobilePanelOpen || undefined} inert={mobilePanelOpen || undefined}>
         {kinds.map(kind => {
           const Icon = icons[kind];
