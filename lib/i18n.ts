@@ -91,8 +91,6 @@ type AppMessages = {
   snapshotNote: string;
   mapLabel: string;
   mapKeyboardHelp: string;
-  mapTitle: string;
-  inView: (count: string) => string;
   zoomIn: string;
   zoomOut: string;
   showAll: string;
@@ -165,7 +163,7 @@ export const messages: Record<Language, AppMessages> = {
     snapshotStale: '此影像已超過 10 分鐘未更新，可能暫停服務。',
     snapshotNote: '每 2 分鐘自動重新讀取 · 香港時間\n更新時間取自官方影像檔案；拍攝時間以圖中標示為準。若顯示「No Service」，代表官方暫未提供影像。',
     mapLabel: '香港相機位置互動地圖', mapKeyboardHelp: '使用方向鍵移動地圖，點選數字群組放大',
-    mapTitle: '全港交通地圖', inView: count => `範圍內 ${count} 個位置`, zoomIn: '放大地圖', zoomOut: '縮小地圖',
+    zoomIn: '放大地圖', zoomOut: '縮小地圖',
     showAll: '顯示全部相機位置', returnToHongKong: '返回全港',
     mapLoadFailed: '互動地圖或底圖暫時未能完整載入。相機位置資料不受影響，請檢查網絡或重新載入。',
     mapLoading: '正在載入地圖', allLayersOff: '所有圖層已關閉', cameraLoadFailed: '暫時未能載入相機位置',
@@ -177,7 +175,7 @@ export const messages: Record<Language, AppMessages> = {
     languageControl: 'Language', english: 'English', chinese: 'Chinese',
     collapseTopbar: 'Collapse the top bar to free up map space', expandTopbar: 'Expand the top bar',
     collapseSidebar: 'Collapse the layers panel to free up map space', expandSidebar: 'Expand the layers panel',
-    brandTitle: '香港實時交通資訊',
+    brandTitle: 'HK Real-Time Traffic Info',
     officialData: 'Official open data', sources: 'Sources', sidebarLabel: 'Layers and details',
     overviewEyebrow: 'HONG KONG · TRAFFIC OVERVIEW', overviewTitle: 'Camera overview', publishedLocations: 'published locations',
     completeInventory: 'Complete list', mapLayers: 'Map layers', showingLocations: count => `Showing ${count}`,
@@ -229,7 +227,7 @@ export const messages: Record<Language, AppMessages> = {
     snapshotStale: 'This image has not updated for more than 10 minutes and may be temporarily unavailable.',
     snapshotNote: 'Automatically refreshed every 2 minutes · Hong Kong time\nUpdate time comes from the official image file; see the image for its capture time. “No Service” means the official source has no image available.',
     mapLabel: 'Interactive map of Hong Kong camera locations', mapKeyboardHelp: 'Use arrow keys to move the map and select a numbered cluster to zoom in',
-    mapTitle: 'Hong Kong traffic map', inView: count => `${count} locations in view`, zoomIn: 'Zoom in', zoomOut: 'Zoom out',
+    zoomIn: 'Zoom in', zoomOut: 'Zoom out',
     showAll: 'Show all camera locations', returnToHongKong: 'Return to all Hong Kong',
     mapLoadFailed: 'The interactive map or basemap could not fully load. Camera location data is unaffected; check your connection or reload.',
     mapLoading: 'Loading map', allLayersOff: 'All layers are off', cameraLoadFailed: 'Camera locations could not be loaded',

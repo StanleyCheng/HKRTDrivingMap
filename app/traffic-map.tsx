@@ -14,6 +14,8 @@ const symbols = {
   parking: '<rect x="4" y="3" width="16" height="18" rx="3"/><path d="M10 17V7.5h3.4a3.1 3.1 0 0 1 0 6.2H10"/>',
   rainfall: '<path d="M12 3.5s5.8 6.4 5.8 10.6a5.8 5.8 0 1 1-11.6 0C6.2 9.9 12 3.5 12 3.5z"/>',
 };
+const FLOW_SEGMENT_WEIGHT = 4.8;
+const SELECTED_FLOW_SEGMENT_WEIGHT = 7.2;
 type Props = { cameras: Camera[]; segments?: FlowSegment[]; selected: Camera | null; selectedSegmentId?: string | null; onSelect: (camera: Camera) => void; onSelectSegment?: (segment: FlowSegment) => void; loading: boolean; allDisabled: boolean; hasErrors: boolean; language: Language; inactive?: boolean };
 export default function TrafficMap({ cameras, segments, selected, selectedSegmentId, onSelect, onSelectSegment, loading, allDisabled, hasErrors, language, inactive = false }: Props) {
   const copy = messages[language];
@@ -24,7 +26,6 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
   const markers = useRef(new Map<string, Leaflet.Marker>());
   const previousSelection = useRef<string | null>(null);
   const selectRef = useRef(onSelect);
-  const camerasRef = useRef(cameras);
   const copyRef = useRef(copy);
   const segmentGroup = useRef<Leaflet.LayerGroup | null>(null);
   const segmentRenderer = useRef<Leaflet.Renderer | null>(null);
@@ -33,9 +34,7 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
   const onSelectSegmentRef = useRef(onSelectSegment);
   const [ready, setReady] = useState(false);
   const [mapError, setMapError] = useState(false);
-  const [inView, setInView] = useState(0);
   useEffect(() => { selectRef.current = onSelect; }, [onSelect]);
-  useEffect(() => { camerasRef.current = cameras; }, [cameras]);
   useEffect(() => { copyRef.current = copy; }, [copy]);
   useEffect(() => { onSelectSegmentRef.current = onSelectSegment; }, [onSelectSegment]);
   useEffect(() => {
@@ -63,9 +62,7 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
       }).addTo(m);
       segmentRenderer.current = L.canvas({ padding: 0.5 });
       segmentGroup.current = L.layerGroup().addTo(m);
-      const countVisible = () => setInView(camerasRef.current.filter(c => m.getBounds().contains([c.lat, c.lng])).length);
-      m.on('moveend', countVisible);
-      observer = new ResizeObserver(() => { m.invalidateSize(); countVisible(); });
+      observer = new ResizeObserver(() => m.invalidateSize());
       observer.observe(element.current);
       setReady(true);
     })().catch(() => setMapError(true));
@@ -86,7 +83,6 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
       markers.current.set(camera.id, marker);
       return marker;
     }));
-    setInView(cameras.filter(c => m.getBounds().contains([c.lat, c.lng])).length);
   }, [cameras, ready, language]);
   useEffect(() => {
     const L = library.current, group = segmentGroup.current;
@@ -97,7 +93,7 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
       const name = language === 'en' ? segment.nameEn || segment.name : segment.name;
       const polyline = L.polyline(segment.path, {
         color: speedLevelColors[segment.level],
-        weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round', smoothFactor: 1,
+        weight: FLOW_SEGMENT_WEIGHT, opacity: 0.85, lineCap: 'round', lineJoin: 'round', smoothFactor: 1,
         renderer: segmentRenderer.current ?? undefined, className: 'segment-polyline',
       });
       polyline.bindTooltip(name, { sticky: true, direction: 'top', offset: [0, -10] });
@@ -114,11 +110,11 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
   useEffect(() => {
     if (previousSegmentSelection.current) {
       const prev = segmentPolylines.current.get(previousSegmentSelection.current);
-      if (prev) prev.setStyle({ weight: 6, opacity: 0.85 });
+      if (prev) prev.setStyle({ weight: FLOW_SEGMENT_WEIGHT, opacity: 0.85 });
     }
     if (selectedSegmentId) {
       const next = segmentPolylines.current.get(selectedSegmentId);
-      if (next) { next.setStyle({ weight: 9, opacity: 1 }); next.bringToFront(); }
+      if (next) { next.setStyle({ weight: SELECTED_FLOW_SEGMENT_WEIGHT, opacity: 1 }); next.bringToFront(); }
     }
     previousSegmentSelection.current = selectedSegmentId ?? null;
   }, [selectedSegmentId, segments]);
@@ -126,10 +122,8 @@ export default function TrafficMap({ cameras, segments, selected, selectedSegmen
     if (cameras.length && library.current) map.current?.fitBounds(library.current.latLngBounds(cameras.map(c => [c.lat, c.lng])), { padding: [42, 64], maxZoom: 13 });
     else map.current?.setView([22.355, 114.13], 11);
   }
-  const numberLocale = language === 'en' ? 'en-HK' : 'zh-HK';
   return <section className="map-area" aria-label={copy.mapLabel} aria-hidden={inactive || undefined} inert={inactive || undefined}>
     <div ref={element} className="map-canvas" role="group" aria-label={copy.mapKeyboardHelp} />
-    <div className="map-heading"><strong>{copy.mapTitle}</strong><span>{copy.inView(inView.toLocaleString(numberLocale))}</span></div>
     <div className="map-tools"><div className="zoom-buttons"><button aria-label={copy.zoomIn} title={copy.zoomIn} onClick={() => map.current?.zoomIn()}><Plus size={19}/></button><button aria-label={copy.zoomOut} title={copy.zoomOut} onClick={() => map.current?.zoomOut()}><Minus size={19}/></button></div><button aria-label={copy.showAll} title={copy.returnToHongKong} onClick={fit}><LocateFixed size={20}/></button></div>
     {mapError && <div className="map-error" role="alert">{copy.mapLoadFailed}</div>}
     {!ready && !mapError && <div className="map-loading"><LoaderCircle className="spin" size={20}/> {copy.mapLoading}</div>}
